@@ -19,7 +19,7 @@ import {SkillBook} from '../planning/book.js';
 import type {LabConfig} from './types.js';
 export type MemorySeed={adaptive?:AdaptiveMemory;catalogue?:ReturnType<ReactiveCatalogue['export']>;experience?:ReturnType<ExperienceTable['export']>;book?:ReturnType<SkillBook['export']>};
 export type ProviderFactory={ready:(backend:'jev'|'llm')=>boolean;backend:(backend:'jev'|'llm')=>JudgmentBackend;adapt?:(input:Parameters<AdaptiveGenerator['propose']>[0],signal:AbortSignal,onProgress?:(event:GenerationProgress)=>void)=>ReturnType<AdaptiveGenerator['propose']>;adaptSource?:{id:string;kind:'llm'|'mock'};generate?:NonNullable<ReactiveProviders['generate']>};
-export type RequestLedger={requests:number;externalRequests:number;questions:number;rows:{source:string;kind:string;questions:number;latencyMs:number;status:string;purpose?:string;logicalRequestId?:string;attempt?:number;maxAttempts?:number;worldRevision?:string;failureKind?:string;providerStatus?:number;retryable?:boolean;model?:string;usage:unknown;error?:string}[]};
+export type RequestLedger={requests:number;externalRequests:number;questions:number;rows:{source:string;kind:string;questions:number;latencyMs:number;status:string;purpose?:string;logicalRequestId?:string;attempt?:number;maxAttempts?:number;worldRevision?:string;failureKind?:string;providerStatus?:number;retryable?:boolean;model?:string;usage:unknown;transport?:unknown;validation?:unknown;error?:string}[]};
 export interface HostedSession{
  world:GameWorld;step():Promise<StepResult>;cancel():void;edit(tool:EditTool,point:Point):{ok:boolean;message:string};
  finished:boolean;lastResult:StepResult|undefined;inspect():{lastDecision:unknown;activeSkill:unknown;lastSkillResult:unknown;diagnostics?:unknown;transportRetry?:RetryState|null};export():unknown;memory():MemorySeed;
@@ -48,7 +48,7 @@ export function createHosted(config:LabConfig,initial:GameState,notify:(e:Engine
    // Race here too: a transport ignoring cancellation cannot leave a pending ledger row.
    let rejectAbort:(e:unknown)=>void=()=>{};const abort=()=>rejectAbort(attemptSignal.reason);
    try{const result=await Promise.race([raw.ask(structuredClone(frozen),attemptSignal),new Promise<never>((_,reject)=>{rejectAbort=reject;attemptSignal.addEventListener('abort',abort,{once:true});if(attemptSignal.aborted)abort();})]);attemptSignal.throwIfAborted();check();if(config.controller==='adaptive')notify({runId:'hosted',seq:0,cycle:0,at:Date.now(),type:'s_transport',data:{input:frozen,result,source:raw.id,...(retry?{logicalRequestId,attempt}:{})}});row.status='returned';row.usage=result.usage??null;if(result.model)row.model=result.model;return result;}
-   catch(e){row.status=active.aborted?'aborted':'failed';row.error=String(e).slice(0,600);Object.assign(row,transportInfo(e));if(e&&typeof e==='object'&&'usage'in e)row.usage=e.usage;throw e;}
+   catch(e){row.status=active.aborted?'aborted':'failed';row.error=String(e).slice(0,600);Object.assign(row,transportInfo(e));if(e&&typeof e==='object'){if('usage'in e)row.usage=e.usage;if('transport'in e)row.transport=structuredClone(e.transport);if('validation'in e)row.validation=structuredClone(e.validation);}throw e;}
    finally{attemptSignal.removeEventListener('abort',abort);row.latencyMs=performance.now()-at;notify({runId:'hosted',seq:0,cycle:0,at:Date.now(),type:'lab_request_finished',data:{index:ledger.rows.indexOf(row)+1,...row}});}
   };
   if(!retry)return attempt(1,active);

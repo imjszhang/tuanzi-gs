@@ -1901,8 +1901,11 @@ function validateAnswer(q, a) {
     if (typeof r.choice !== 'string' || !own(q.criteria, r.choice) || !r.probabilities || typeof r.probabilities !== 'object' || Object.keys(r.probabilities).sort().join('|') !== Object.keys(q.criteria).sort().join('|'))
         throw Error('unknown_choice_or_distribution');
     const entries = Object.entries(r.probabilities).map(([k, v]) => [k, probability(v)]), sum = entries.reduce((a, b) => a + b[1], 0);
-    if (Math.abs(sum - 1) > .01)
-        throw Error('distribution_not_normalized');
+    // Keep the inclusive 1% contract; compensate only for floating-point summation.
+    // Preserve the provider's probabilities and choice rather than normalizing them.
+    const tolerance = .01, roundoff = Number.EPSILON * entries.length * Math.max(1, Math.abs(sum));
+    if (Math.abs(sum - 1) > tolerance + roundoff)
+        throw Object.assign(Error('distribution_not_normalized'), { validation: { code: 'distribution_not_normalized', sum, tolerance, roundoff } });
     if (r.probabilities[r.choice] + 1e-6 < Math.max(...entries.map(x => x[1])))
         throw Error('choice_not_distribution_max');
     return { type: 'choice', choice: r.choice, probabilities: Object.fromEntries(entries), confidence: probability(r.confidence) };

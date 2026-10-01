@@ -46,6 +46,8 @@ export type RequestLedger = {
         retryable?: boolean;
         model?: string;
         usage: unknown;
+        transport?: unknown;
+        validation?: unknown;
         error?: string;
     }[];
 };

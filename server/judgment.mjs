@@ -28,11 +28,12 @@ export async function judgmentRequest(input,{signal,charge,env=process.env,fetch
  const u=result.usage,a=input.backend==='jev'?u?.input_tokens:u?.prompt_tokens,b=input.backend==='jev'?u?.output_tokens:u?.completion_tokens;
  const model=typeof result.model==='string'?result.model:(input.backend==='jev'?env.JEV_MODEL||'jev-1.13.0':env.LLM_MODEL);
  const usage=Number.isSafeInteger(a)&&a>=0&&Number.isSafeInteger(b)&&b>=0?{provider:input.backend==='jev'?'typesafe':'configured-chat-completions',model,inputTokens:a,outputTokens:b}:undefined;
+ let data=result;
  try {
- let data=result;if(input.backend==='llm'){try{data=JSON.parse(result.choices[0].message.content);}catch{throw fail('Invalid judgment LLM content',502);}}
+ if(input.backend==='llm'){try{data=JSON.parse(result.choices[0].message.content);}catch{throw fail('Invalid judgment LLM content',502);}}
  // Exact question-set matching. Reject rather than silently skip malformed items.
  if(!data.answers||Object.keys(data.answers).sort().join('|')!==ids.sort().join('|'))throw fail('Provider question set mismatch',502);
  const answers=Object.fromEntries(ids.map(id=>[id,validateAnswer(input.questions[id],data.answers[id])]));
  return {answers,model,...(usage?{usage}:{}),transport:{request:structuredClone(request),response:{model,answers:structuredClone(data.answers)},noCredentials:true}};
- }catch(error){throw Object.assign(error,{status:502,...(usage?{usage}:{})});}
+ }catch(error){throw Object.assign(error,{status:502,retryable:false,failureKind:'answer_validation',transport:{response:{model,answers:structuredClone(data?.answers??null)},noCredentials:true},...(usage?{usage}:{})});}
 }
