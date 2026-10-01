@@ -1,0 +1,35 @@
+import test from 'node:test';import assert from 'node:assert/strict';import http from 'node:http';import os from 'node:os';import fs from 'node:fs';import path from 'node:path';
+import {promisify} from 'node:util';import {execFile} from 'node:child_process';
+import {ExperimentManager} from '../dist/src/lab/manager.js';import {createLabHandler} from '../server/lab/http.mjs';
+import {access} from '../scripts/lib/incident-fixtures.mjs';
+const exec=promisify(execFile),actor={id:'agent:incident-042',kind:'agent',label:'离线弃权测试，不是真实模型'};
+async function fixture(t){
+ const inputs=[];const providers={ready:()=>true,backend:()=>({id:'OFFLINE-MOCK-child-abstains',kind:'mock',ask:async i=>{
+  inputs.push(structuredClone(i));const p=i.state.evidence.packet,q=i.questions.choose;assert.equal(q.type,'choice');let chosen='none';
+  if(p.level==='parent'){const n=p.candidates.findIndex(c=>c.facts.contract==='access-open');if(n>=0)chosen='a'+n;}
+  return {answers:{choose:{type:'choice',choice:chosen,confidence:1,probabilities:Object.fromEntries(Object.keys(q.criteria).map(k=>[k,k===chosen?1:0]))}},model:'OFFLINE-MOCK'};
+ }}),generate:async()=>({output:access()})};
+ const manager=new ExperimentManager(providers),token='local-test-token',dir=fs.mkdtempSync(path.join(os.tmpdir(),'gs-042-'));let handler;
+ const server=http.createServer(async(req,res)=>{if(req.url==='/api/status'){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({token,jevReady:true,llmReady:true}));return;}if(!await handler(req,res,new URL(req.url,'http://127.0.0.1'))){res.writeHead(404);res.end();}});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;handler=createLabHandler({manager,token,baseUrl:base,archiveDir:dir});
+ t.after(async()=>{manager.close();server.closeAllConnections();await new Promise(r=>server.close(r));fs.rmSync(dir,{recursive:true,force:true});});
+ const api=async(p,b)=>{const r=await fetch(base+p,{method:b?'POST':'GET',headers:{'x-gs-token':token,...(b?{'content-type':'application/json'}:{})},...(b?{body:JSON.stringify(b)}:{})});return {status:r.status,data:await r.json()};};
+ const create=async()=> (await api('/api/lab/runs',{requestId:crypto.randomUUID(),actor,config:{kind:'game',scenario:'guarded',strategy:'direct',backend:'jev',generator:'llm',allowLive:true,maxRequests:80,deadlineMs:600000}})).data;
+ const cmd=(s,action)=>api(`/api/lab/runs/${s.runId}/commands`,{commandId:crypto.randomUUID(),expectedControlVersion:s.controlVersion,actor,action});
+ async function run(){let s=await create();for(let k=0;k<10;k++){const r=await cmd(s,'step');assert.equal(r.status,200);s=r.data.state;if(['blocked','stopped','fault','succeeded'].includes(s.status))return s;}throw Error('not terminal');}
+ return {manager,inputs,api,base,token,create,cmd,run};
+}
+test('042 CLI/HTTP shared run returns exact blockage instead of repair budget exhaustion',async t=>{const f=await fixture(t),s=await f.run();assert.equal(s.status,'blocked');assert.equal(s.reason,'decision_blocked:no_local_suitable_action');assert.equal(s.physicalActions,0);assert.equal(s.requests,4);assert.equal(s.diagnostics.budgets.repairs.used,1);assert.equal(s.diagnostics.budgets.repairs.limit,3);assert.equal(s.diagnostics.latestFailure.outcome.steps,0);});
+test('042 hosted adapter actually transmits enriched evidence and new question version',async t=>{const f=await fixture(t);await f.run();const child=f.inputs.find(i=>i.state.evidence.packet.level==='child');assert.equal(child.state.evidence.packet.taskContext.immediateObjective.targetRole,'resource-placement-stand');assert.equal(child.questions.choose.instructions.taskContextRef,'evidence.packet.taskContext');});
+test('042 shared export persists failure packet, response and two strategy axes',async t=>{const f=await fixture(t),s=await f.run(),e=(await f.api(`/api/lab/runs/${s.runId}/export`)).data;assert.equal(e.version,'0.4.2');assert.equal(e.trace.hierarchy.failures[0].decision.judgment.choice,null);assert.equal(e.trace.decisionAudit.judgmentRuns.at(-1).questionStrategy,'direct');assert.equal(e.trace.decisionAudit.judgmentRuns.at(-1).dispatchStrategy,'batch');assert(!JSON.stringify(e).includes(f.token));});
+test('042 blocked run cannot be silently restarted with fresh repair budget',async t=>{const f=await fixture(t),s=await f.run();const r=await f.cmd(s,'start');assert.equal(r.status,409);assert.equal(r.data.error.code,'RUN_TERMINAL');assert.equal(f.manager.get(s.runId).view().requests,s.requests);});
+test('042 repeated status/result reads never schedule another generation',async t=>{const f=await fixture(t),s=await f.run();for(let i=0;i<3;i++){const r=(await f.api(`/api/lab/runs/${s.runId}/result`)).data;assert.equal(r.complete,true);assert.equal(r.state.requests,4);}assert.equal(f.inputs.length,3);});
+test('042 CLI consumes diagnostics from same HTTP run with structured cause',async t=>{const f=await fixture(t),s=await f.run();const out=JSON.parse((await exec(process.execPath,['bin/gs-lab.mjs','result',s.runId,'--url',f.base],{timeout:5000})).stdout);assert.equal(out.state.reason,s.reason);assert.equal(out.state.diagnostics.latestFailure.id,s.diagnostics.latestFailure.id);});
+test('042 phase and failure evidence travels over real SSE',async t=>{const f=await fixture(t),s=await f.run();const res=await fetch(f.base+`/api/lab/runs/${s.runId}/stream?after=0`,{headers:{'x-gs-token':f.token},signal:AbortSignal.timeout(5000)});assert.match(res.headers.get('content-type'),/event-stream/);const rd=res.body.getReader();let text='';for(let k=0;k<100;k++){const {value,done}=await rd.read();if(done)break;text+=new TextDecoder().decode(value);if(text.includes('"status":"blocked"'))break;}await rd.cancel();assert(text.includes('decision_blocked:no_local_suitable_action'));assert(text.includes('gs/skill-task-context/v042'));});
+test('042 frozen child probe defaults to NOT_RUN, even with environment keys present',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'gs-probe-'));try{const out=path.join(dir,'probe.json');const r=await exec(process.execPath,['scripts/probe-child-v042.mjs','--out='+out],{env:{...process.env,TYPESAFE_API_KEY:'TEST-ONLY-DO-NOT-CONTACT'},timeout:10000});
+ assert.equal(JSON.parse(r.stdout).status,'NOT_RUN');const p=JSON.parse(fs.readFileSync(out));assert.equal(p.externalRequests,0);assert.equal(p.samples.length,0);assert(p.packet.taskContext);assert(!JSON.stringify(p).includes('TEST-ONLY-DO-NOT-CONTACT'));}finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('042 frozen probe requires an explicit live request budget before network use',async()=>{
+ await assert.rejects(exec(process.execPath,['scripts/probe-child-v042.mjs','--live','--max-requests=0'],{timeout:5000}),e=>e.code!==0&&e.stderr.includes('explicit'));
+});

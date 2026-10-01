@@ -1,0 +1,208 @@
+TAP version 13
+# Subtest: ordinary cycles execute and objective verifier determines completion
+ok 1 - ordinary cycles execute and objective verifier determines completion
+  ---
+  duration_ms: 7.576957
+  type: 'test'
+  ...
+# Subtest: no candidates -> validated policy update -> new observation/candidate cycle
+ok 2 - no candidates -> validated policy update -> new observation/candidate cycle
+  ---
+  duration_ms: 2.049657
+  type: 'test'
+  ...
+# Subtest: explicit deterministic rule bypasses all selector calls
+ok 3 - explicit deterministic rule bypasses all selector calls
+  ---
+  duration_ms: 0.650704
+  type: 'test'
+  ...
+# Subtest: a single candidate is not automatically executed without evaluation
+ok 4 - a single candidate is not automatically executed without evaluation
+  ---
+  duration_ms: 0.958654
+  type: 'test'
+  ...
+# Subtest: a selector cannot invent an action id
+ok 5 - a selector cannot invent an action id
+  ---
+  duration_ms: 0.564916
+  type: 'test'
+  ...
+# Subtest: high preference confidence cannot override poor semantic suitability
+ok 6 - high preference confidence cannot override poor semantic suitability
+  ---
+  duration_ms: 0.767608
+  type: 'test'
+  ...
+# Subtest: equivalent suitable choices are not escalated solely for low confidence
+ok 7 - equivalent suitable choices are not escalated solely for low confidence
+  ---
+  duration_ms: 0.240129
+  type: 'test'
+  ...
+# Subtest: world changed while selector was running -> discard result without execution
+ok 8 - world changed while selector was running -> discard result without execution
+  ---
+  duration_ms: 0.868199
+  type: 'test'
+  ...
+# Subtest: executor atomically rejects a change after the runtime's last observation
+ok 9 - executor atomically rejects a change after the runtime's last observation
+  ---
+  duration_ms: 1.515298
+  type: 'test'
+  ...
+# Subtest: only one in-flight step per engine
+ok 10 - only one in-flight step per engine
+  ---
+  duration_ms: 2.181925
+  type: 'test'
+  ...
+# Subtest: external cancellation prevents execution and releases the run
+ok 11 - external cancellation prevents execution and releases the run
+  ---
+  duration_ms: 5.906428
+  type: 'test'
+  ...
+# Subtest: selector timeout counts its call but performs no side effect
+ok 12 - selector timeout counts its call but performs no side effect
+  ---
+  duration_ms: 21.853358
+  type: 'test'
+  ...
+# Subtest: execution timeout remains unknown: no automatic retry even when effect finishes later
+ok 13 - execution timeout remains unknown: no automatic retry even when effect finishes later
+  ---
+  duration_ms: 103.606497
+  type: 'test'
+  ...
+# Subtest: permission requirements are not sent to a planner to bypass
+ok 14 - permission requirements are not sent to a planner to bypass
+  ---
+  duration_ms: 0.656502
+  type: 'test'
+  ...
+# Subtest: permission changes after selection are rechecked before executing
+ok 15 - permission changes after selection are rechecked before executing
+  ---
+  duration_ms: 0.618796
+  type: 'test'
+  ...
+# Subtest: untrusted policy cannot add arbitrary capabilities
+ok 16 - untrusted policy cannot add arbitrary capabilities
+  ---
+  duration_ms: 0.812876
+  type: 'test'
+  ...
+# Subtest: proposal cannot modify root goal via extra fields
+ok 17 - proposal cannot modify root goal via extra fields
+  ---
+  duration_ms: 0.417956
+  type: 'test'
+  ...
+# Subtest: stale policy base version is rejected
+ok 18 - stale policy base version is rejected
+  ---
+  duration_ms: 0.525055
+  type: 'test'
+  ...
+# Subtest: world changed during planner call -> proposed config never commits
+ok 19 - world changed during planner call -> proposed config never commits
+  ---
+  duration_ms: 1.252394
+  type: 'test'
+  ...
+# Subtest: no-op repair pauses instead of looping forever
+ok 20 - no-op repair pauses instead of looping forever
+  ---
+  duration_ms: 0.487669
+  type: 'test'
+  ...
+# Subtest: model budget is reserved before dispatch
+ok 21 - model budget is reserved before dispatch
+  ---
+  duration_ms: 0.679587
+  type: 'test'
+  ...
+# Subtest: action budget limits dispatch attempts independently of model budget
+ok 22 - action budget limits dispatch attempts independently of model budget
+  ---
+  duration_ms: 0.869361
+  type: 'test'
+  ...
+# Subtest: history is bounded independently of the journal
+ok 23 - history is bounded independently of the journal
+  ---
+  duration_ms: 2.342525
+  type: 'test'
+  ...
+# Subtest: no-progress feedback triggers a repair request
+ok 24 - no-progress feedback triggers a repair request
+  ---
+  duration_ms: 2.131539
+  type: 'test'
+  ...
+# Subtest: executor idempotency key reuses receipt instead of repeating mutation
+ok 25 - executor idempotency key reuses receipt instead of repeating mutation
+  ---
+  duration_ms: 0.125277
+  type: 'test'
+  ...
+# Subtest: Jev HTTP request maps aliases, batches independent questions and parses usage
+ok 26 - Jev HTTP request maps aliases, batches independent questions and parses usage
+  ---
+  duration_ms: 21.179775
+  type: 'test'
+  ...
+# Subtest: explicit none is represented as abstention, not an executable action
+ok 27 - explicit none is represented as abstention, not an executable action
+  ---
+  duration_ms: 0.761039
+  type: 'test'
+  ...
+# Subtest: malformed out-of-range Noul is rejected
+ok 28 - malformed out-of-range Noul is rejected
+  ---
+  duration_ms: 0.693197
+  type: 'test'
+  ...
+# Subtest: provider cannot introduce a new action alias
+ok 29 - provider cannot introduce a new action alias
+  ---
+  duration_ms: 0.496974
+  type: 'test'
+  ...
+# Subtest: missing independent suitability answer fails closed
+ok 30 - missing independent suitability answer fails closed
+  ---
+  duration_ms: 0.798235
+  type: 'test'
+  ...
+# Subtest: 429 is surfaced with retry metadata and no hidden retries
+ok 31 - 429 is surfaced with retry metadata and no hidden retries
+  ---
+  duration_ms: 1.209459
+  type: 'test'
+  ...
+# Subtest: 255 candidates would overflow Choice including abstention: reject before sending
+ok 32 - 255 candidates would overflow Choice including abstention: reject before sending
+  ---
+  duration_ms: 0.481861
+  type: 'test'
+  ...
+# Subtest: non-normalized distributions are rejected at the runtime boundary
+ok 33 - non-normalized distributions are rejected at the runtime boundary
+  ---
+  duration_ms: 0.464485
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 232.700674

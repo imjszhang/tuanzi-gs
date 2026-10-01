@@ -1,0 +1,1724 @@
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -1,4 +1,4 @@
+-# Working with G/S Lab 0.4.1
++# Working with G/S Lab 0.4.2
+ 
+ You are an experiment operator, not the tested in-game policy. Use the shared service API/CLI; do not simulate clicks or silently alter game objectives to make a run pass.
+ 
+@@ -15,3 +15,13 @@
+ 
+ Quick offline suite: `node examples/agent/compare.mjs`.
+ The API token identifies one trusted local session, not a multi-user principal. No public deployment or active crash recovery is provided.
++
++## v0.4.2 recovery contract
++
++- A run with `status: blocked` and `reason: decision_blocked:*` has ended at a judgment boundary. It is NOT an operator pause to auto-resume. Preserve `diagnostics`, the actual answer and trace; do not force the second-ranked candidate.
++- `duplicate_repair_no_new_evidence` means an equivalent proposal under the same evidence/controller was blocked. A different ID or title is not a new behavior.
++- Do not increase budgets, automatically fork repeated identical runs, switch to rules, or change goals just to make the experiment pass. A changed context/controller/world is a new, explicitly labelled experiment.
++- `diagnostics.latestFailure` contains the bounded decision packet and full judgment. `diagnostics.budgets.repairs` shows actual repair usage and cap. Report zero physical progress honestly even when a child invocation returned normally.
++- `executionFeedback` is measured execution evidence; `repairFeedback` is proposal validation feedback. Keep both when asking a generator to revise a genuinely failed skill.
++- Use `npm run probe:child` to export the frozen first child packet without networking. Actual isolated Jev probing requires explicit user authorization and `node scripts/probe-child-v042.mjs --live --variant=current --backend=jev --samples=1 --max-requests=1`. It performs one direct decision, no skill generation, and no physical execution. The legacy variant reconstructs the old packet shape, not the missing original provider request.
++- View/API/CLI schemas remain compatible with v0.4.1, with optional diagnostics and disambiguated question/dispatch strategy. See docs/API-v0.4.2.md.
+--- a/README.md
++++ b/README.md
+@@ -1,8 +1,8 @@
+-# 团子 / G/S Lab v0.4.1
++# 团子 / G/S Lab v0.4.2
+ 
+ **外部 Agent 主持实验，G/S 决定游戏行为，人通过网页观察同一场实验。**
+ 
+-这一版增加统一实验控制面：HTTP API、无依赖 CLI、服务器拥有的会话、可续读事件流、人工接管、检查点分支与真实报告导出。不会把 CLI 的运行结果重放成另一场“同步”游戏。
++这一版修复真实模型弃权后反复生成相同技能的恢复问题。子层现在收到注册的目标—阶段—即时任务上下文；弃权与物理技能失败分开记录；实际失败反馈送到真正需要修复的生成器；更换 ID 不能绕过同条件重复检测。保留 HTTP API、CLI、同一 runId 网页观测和原有游戏。
+ 
+ ## 启动（Node.js 22+）
+ 
+@@ -42,7 +42,7 @@
+ 
+ 脚本通过 HTTP 分别创建 direct/batch/serial/dependent 四个独立冷启动实验，运行、等待、输出结果与查看地址。默认规则后端，10 ms 合成延迟，无真实模型调用。页面列出同一个服务中的全部会话；很快结束的实验可以回放，不通过人为放慢执行来夸大模型延迟。
+ 
+-## 本版主要内容
++## 保留的实验控制能力
+ 
+ - **两个实验范围**：判断实验（energy/fast/reserve/chain）；主世界（meadow/detour/guarded/remix），支持父子 G/S，以及程序搜索/完整规则离线对照。
+ - **唯一权威状态**：服务持有世界、引擎和日志；网页仅显示快照与事件。关闭标签页不取消实验。新网页可根据 runId 继续观察。
+@@ -53,6 +53,15 @@
+ - **证据**：状态、命令、控制者、父子事件、请求、干预与结果导出 JSON。终局报告自动写入 `.gs-lab/exports`；保存失败会在 API 的 archive 字段报告。
+ - **真实模型保持显式授权**：配置服务端密钥，加 `--allow-live --max-requests N`。默认是 rule。未执行实网就没有模型性能结论。
+ 
++
++## v0.4.2：遇到模型弃权时
++
++若子层返回 none，服务将状态标为 `blocked`，原因例如 `decision_blocked:no_local_suitable_action`；它不是可直接继续的操作员暂停。网页“修复诊断”与 CLI 的 `diagnostics` 包含当前任务上下文、完整模型判断、最近失败及修复次数。系统不选概率第二名、不隐式用规则动作，也不在同一证据下再次请求相同技能。
++
++当实际技能失败、仍有结构性修复空间时，生成器分别收到 `executionFeedback`（实际执行证据）和 `repairFeedback`（本次提案校验拒绝）。同样的局面与控制器下，仅改技能名字或 ID 不构成新方案。
++
++**本版没有重跑真实 Jev/LLM。**发行修复通过受控替身与规则回归验证；新的上下文能否改善真实模型判断，必须另做实网实验。
++
+ ## 核心注意事项
+ 
+ **人和 Agent 是同一台机器上的可信操作方，不是多租户用户。**服务仅监听 127.0.0.1。短期本地 token 保护接口；actor ID 是协作与溯源，不是不同人的安全凭据。不要直接暴露到公网。另一台机器上的 Agent 可通过受控 SSH 转发连接，不能简单改监听地址代替访问控制。
+@@ -62,6 +71,10 @@
+ **活跃会话不做崩溃恢复。**浏览器断线可重连；服务重启会失去内存中的会话和控制器。已保存终局 JSON 可以在观测台导入只读回放。没有承诺远端副作用 exactly-once 或持久化执行恢复。
+ 
+ ## 文档与源码
++
++- [v0.4.2 修复、迁移与实网复查](docs/RELEASE-v0.4.2.md)
++- [v0.4.2 API 增量与弃权处理](docs/API-v0.4.2.md)
++- [本版验证记录和限制](docs/VALIDATION-v0.4.2.md)
+ 
+ - [给外部 Agent 的操作手册](docs/AGENT_INTERFACE.md)
+ - [HTTP API 与 JSON 示例](docs/API-v0.4.1.md)
+@@ -80,6 +93,9 @@
+ npm run test:lab        # 新控制面专项
+ npm run bench:v04       # 旧判断实验基准
+ npm run test:browser:041
++npm run test:incident  # 35 项事故类型专项
++npm run bench:incident # 离线重现，不调用模型
++npm run probe:child    # 首步冻结包，默认 NOT_RUN
+ ```
+ 
+ 浏览器自动化额外需要 Python Playwright + Chromium。由于当前执行环境限制，交付的网页专项脚本采用真实本地 HTTP 的测试桥接；SSE 网络协议由 Node 集成测试独立验证。它不冒充真实 HTTP 页面导航实测。详细证据与限制见验证文档。
+--- a/START_HERE_先读我.txt
++++ b/START_HERE_先读我.txt
+@@ -1,13 +1,14 @@
+-团子 G/S Lab v0.4.1
++团子 / G/S Lab 0.4.2
+ 
+-1. 安装 Node.js 22 或更新版本。
+-2. 在解压后的 tuanzi-gs 目录打开终端，运行 npm start。
+-3. 网页观测台：http://127.0.0.1:4173/lab
+-4. 另开终端：node bin/gs-lab.mjs create --kind game --scenario guarded
+-5. 返回 runId 和 viewerUrl。人打开 viewerUrl；Agent 使用 CLI/API 操作该 runId。
+-6. node bin/gs-lab.mjs step RUN_ID 或 start RUN_ID。
++Node.js 22+，进入本目录执行 npm start。无需先安装依赖。
++Agent 与人共享实验：http://127.0.0.1:4173/lab
++原有离线试玩：http://127.0.0.1:4173/ 或直接打开 play.html
+ 
+-已经附带编译文件，以上操作不需要先 npm install。
+-play.html 仍可独立离线试玩，但不会与服务中的共享实验自动连接。
+-接口说明：docs/AGENT_INTERFACE.md 与 docs/API-v0.4.1.md。
+-本版默认程序化，真实模型须显式配置和授权；未做真实 Jev/LLM 性能验证。
++外部 Agent 先读 AGENTS.md 与 docs/AGENT_INTERFACE.md。
++本版修复与升级注意事项：docs/RELEASE-v0.4.2.md
++API 新增诊断字段：docs/API-v0.4.2.md
++测试范围：docs/VALIDATION-v0.4.2.md
++
++模型仍弃权时会明确暂停并保留证据，不会隐式改选规则答案、不断生成同样的技能或扩大修复预算。
++真实 Jev/LLM 尚未在本次构建中复测。npm run probe:child 默认不联网。
++从旧版升级建议解压到新目录；密钥 .env 和 .gs-lab/exports 留在自己机器上，不覆盖、不提交。
+--- a/bin/gs-lab.mjs
++++ b/bin/gs-lab.mjs
+@@ -32,7 +32,7 @@
+  const quit=()=>{void reader.cancel();};process.once('SIGINT',quit);
+  try{for(;;){const {done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});let i;while((i=buffer.indexOf('\n\n'))>=0){const block=buffer.slice(0,i);buffer=buffer.slice(i+2);const data=block.split('\n').filter(x=>x.startsWith('data: ')).map(x=>x.slice(6)).join('\n');if(!data)continue;const e=JSON.parse(data);console.log(JSON.stringify(e));if(e.type==='state'&&['succeeded','failed','blocked','cancelled','stopped','fault'].includes(e.data.status)){await reader.cancel();return;}}}}
+  finally{process.off('SIGINT',quit);}}
+-function help(){console.log(`G/S Lab v0.4.1 — shared experiment client (Node >=22)
++function help(){console.log(`G/S Lab v0.4.2 — shared experiment client (Node >=22)
+ 
+ Start service: npm start                 Viewer: http://127.0.0.1:4173/lab
+ Commands:
+--- a/docs/AGENT_INTERFACE.md
++++ b/docs/AGENT_INTERFACE.md
+@@ -104,3 +104,8 @@
+ 观察者可以看到完整审计世界；被测判断器仍受原有事实投影约束。外部 Agent 不应将审计信息通过中途改任务等手段偷偷喂给选择器。
+ 
+ 共享会话在服务内存中。终局导出在 `.gs-lab/exports`，服务重启不恢复活跃控制器；可导入终局报告只读回放。不要把“网页断线重连”当成“进程崩溃恢复”。
++
++
++## v0.4.2 增量
++
++详见 [API 增量](API-v0.4.2.md) 和 [修复说明](RELEASE-v0.4.2.md)。`blocked` 与普通操作员 `paused` 分开；先导出 `diagnostics`，不要反复启动、扩大修复预算或自动切换规则。`npm run probe:child` 默认生成 NOT_RUN 冻结请求包，不联网；实网探针需明确授权。
+--- /dev/null
++++ b/docs/API-v0.4.2.md
+@@ -0,0 +1,39 @@
++# G/S Lab v0.4.2：API 增量
++
++路由、鉴权、控制版本与幂等协议沿用 [API-v0.4.1.md](API-v0.4.1.md)。默认本地服务仍为 127.0.0.1:4173。不要把本页当成新增的开放控制权限。
++
++## 状态与原因
++
++- 操作员 `pause`：决策边界暂停，可按既有控制权协议继续。
++- 引擎 `paused` → 服务 `blocked`：根运行已在判断/执行边界结束；不能对同一个已终止引擎反复 start。需导出证据，修正条件后显式新建实验或从检查点分支。
++- `decision_blocked:no_local_suitable_action`：下层模型没有推荐合法候选。
++- `decision_blocked:parent_no_suitable_skill`：已有适用生成技能，但父层仍弃权。
++- `duplicate_repair_no_new_evidence`：同一条件下重复行为结构被拒绝，不按提案格式错误重试。
++- `repair_budget_exhausted`：仍有明确定义的原始预算，不再掩盖成通用“达到边界”。
++
++## 可选 diagnostics 字段
++
++HTTP 读取状态、CLI status/result、SSE 的 view 以及报告导出可见相同诊断。字段为结构化 JSON，不含服务 token 或 API key：
++
++```text
++diagnostics
++  contextVersion
++  pendingHalt: { reason, ... } | null
++  latestFailure: ExecutionFailure | null
++  failureCount
++  budgets
++```
++
++以运行返回为准；不存在的失败为 null，不应补造。`ExecutionFailure` 含规范化技能结构/显示指纹、失败分类、实际步骤/资源变化、阶段、完整最后决策证据包及判断、world/revision、参数绑定、控制器、建议处理路线、是否新证据。上下文版本或实际信息改变后应作为新实验留痕。
++
++判断记录新增 `judgment`；同时记录 `questionStrategy`（问题组织）和 `dispatchStrategy`（请求调度）。这两个维度在 direct 模式下可能分别为 direct 和 batch，含义是单题经批调度器发送，不是多题拆分。
++
++## 外部 Agent 的推荐处理
++
++1. 收到 blocked，停止自动重启、重复生成和扩大预算。
++2. 读取诊断与最后模型答案，export 当前 run；人看到同一份状态。
++3. 需要现场验证时先使用冻结子判断探针，用户明确授权每次真实请求。
++4. 更改上下文/模型/环境后新建并标注实验，不能把新条件下的成功记在旧运行上。
++5. 只有结构性执行失败进入修复时，传递 executionFeedback；与 proposal validation 的 repairFeedback 分开。
++
++API 不提供强制动作、覆写 success、删除失败证据或任意代码执行。模型弃权不被视为执行权限；阈值与 none 的原语含义未改变。
+--- /dev/null
++++ b/docs/README-v0.4.1-history.md
+@@ -0,0 +1,85 @@
++# 团子 / G/S Lab v0.4.1
++
++**外部 Agent 主持实验，G/S 决定游戏行为，人通过网页观察同一场实验。**
++
++这一版增加统一实验控制面：HTTP API、无依赖 CLI、服务器拥有的会话、可续读事件流、人工接管、检查点分支与真实报告导出。不会把 CLI 的运行结果重放成另一场“同步”游戏。
++
++## 启动（Node.js 22+）
++
++已包含编译文件，运行不需要安装 npm 依赖。
++
++```bash
++npm start
++```
++
++- Agent 观测台：`http://127.0.0.1:4173/lab`
++- 原有本地试玩：`http://127.0.0.1:4173/`
++- `play.html`：原有离线单文件试玩，不依赖服务；它不是共享实验会话。
++
++### 让 Agent 操作
++
++另开一个终端，在同一项目目录中：
++
++```bash
++node bin/gs-lab.mjs capabilities
++node bin/gs-lab.mjs create --kind game --scenario guarded --strategy batch
++# 返回 runId 和 viewerUrl。在网页打开 viewerUrl，以下替换 RUN_ID。
++node bin/gs-lab.mjs step RUN_ID
++node bin/gs-lab.mjs start RUN_ID
++node bin/gs-lab.mjs status RUN_ID
++node bin/gs-lab.mjs events RUN_ID --follow
++node bin/gs-lab.mjs result RUN_ID
++node bin/gs-lab.mjs export RUN_ID --out reports/my-run.json
++```
++
++命令默认输出 JSON。也可以 `npm run lab -- ...`；在安装/链接本地包后使用 `gs-lab ...`。CLI 只是服务客户端，**不会在终端另建一个游戏实例**。
++
++### 一键外部 Agent 编排示例
++
++```bash
++npm run demo:agent
++```
++
++脚本通过 HTTP 分别创建 direct/batch/serial/dependent 四个独立冷启动实验，运行、等待、输出结果与查看地址。默认规则后端，10 ms 合成延迟，无真实模型调用。页面列出同一个服务中的全部会话；很快结束的实验可以回放，不通过人为放慢执行来夸大模型延迟。
++
++## 本版主要内容
++
++- **两个实验范围**：判断实验（energy/fast/reserve/chain）；主世界（meadow/detour/guarded/remix），支持父子 G/S，以及程序搜索/完整规则离线对照。
++- **唯一权威状态**：服务持有世界、引擎和日志；网页仅显示快照与事件。关闭标签页不取消实验。新网页可根据 runId 继续观察。
++- **生命周期**：create/start/step/pause/cancel；暂停发生在决策量子边界，正在进行的一个量子可能完成。cancel 合作式终止，不能撤销已经发生的操作。
++- **控制权与版本**：网页默认只读，接管会暂停并记录来源；旧控制者写入被拒绝。所有控制命令需要控制版本，编辑额外核对世界 revision。
++- **幂等**：同一 commandId + 完全相同的请求只执行一次；相同 ID 改变请求返回 409。用于响应丢失后的明确重试，不做隐式重发。
++- **干预与分支**：预设动作边界上的脚本、显式人工编辑、不可变检查点、冷分支/明确继承经验。分支是新试验，不是活动子引擎的透明恢复。
++- **证据**：状态、命令、控制者、父子事件、请求、干预与结果导出 JSON。终局报告自动写入 `.gs-lab/exports`；保存失败会在 API 的 archive 字段报告。
++- **真实模型保持显式授权**：配置服务端密钥，加 `--allow-live --max-requests N`。默认是 rule。未执行实网就没有模型性能结论。
++
++## 核心注意事项
++
++**人和 Agent 是同一台机器上的可信操作方，不是多租户用户。**服务仅监听 127.0.0.1。短期本地 token 保护接口；actor ID 是协作与溯源，不是不同人的安全凭据。不要直接暴露到公网。另一台机器上的 Agent 可通过受控 SSH 转发连接，不能简单改监听地址代替访问控制。
++
++**墙钟期限从首次决策开始，包括之后的人工暂停。**`engineWorkMs` 另外统计引擎推进的耗时（包括模型等待，不等于 CPU 时间）。修改观看或回放速度不会修改执行时间。手动教学可显式设置更长的 `deadlineMs`，正式基准统一该配置。
++
++**活跃会话不做崩溃恢复。**浏览器断线可重连；服务重启会失去内存中的会话和控制器。已保存终局 JSON 可以在观测台导入只读回放。没有承诺远端副作用 exactly-once 或持久化执行恢复。
++
++## 文档与源码
++
++- [给外部 Agent 的操作手册](docs/AGENT_INTERFACE.md)
++- [HTTP API 与 JSON 示例](docs/API-v0.4.1.md)
++- [设计和限制](docs/DESIGN-v0.4.1.md)
++- [验证范围](reports/v041/VALIDATION.md)
++- `src/lab/`：配置/协议、会话适配器、统一管理器、网页观测器（TypeScript）
++- `server/lab/http.mjs`：认证、HTTP、SSE、终局归档
++- `bin/gs-lab.mjs`：CLI
++- `examples/agent/compare.mjs`：外部 Agent 风格编排示例
++
++## 开发与复验
++
++```bash
++npm install             # 仅在改源码、需要本地 TypeScript 时
++npm run check           # 重建游戏/观测台/通用引擎，再运行全部代码测试
++npm run test:lab        # 新控制面专项
++npm run bench:v04       # 旧判断实验基准
++npm run test:browser:041
++```
++
++浏览器自动化额外需要 Python Playwright + Chromium。由于当前执行环境限制，交付的网页专项脚本采用真实本地 HTTP 的测试桥接；SSE 网络协议由 Node 集成测试独立验证。它不冒充真实 HTTP 页面导航实测。详细证据与限制见验证文档。
+--- /dev/null
++++ b/docs/RELEASE-v0.4.2.md
+@@ -0,0 +1,113 @@
++# G/S Lab v0.4.2：阶段上下文与证据驱动的恢复
++
++## 本版解决的问题
++
++依据用户提供的 `INCIDENT-guarded-jev-llm-2026-09-25.md`，v0.4.1 的真实运行出现：规则模拟通过，父层接受新技能，但子层面对四个移动候选弃权；零动作结束后，生成器拿到相同输入，提交相同结构的新 ID，直到修复预算耗尽。用户报告的两局原始导出 JSON 未提供，本次没有逐字回放其真实请求，也没有重新调用真实 Jev/LLM。
++
++本版以干净的 v0.4.1 发行包为基线，修复这类控制流与证据问题，不增加模型预算、不绕过 none、不改变物理世界或根目标。
++
++## 1. 子层的即时任务明确化
++
++新增 `src/skills/context.ts`。每次子层决策包含注册的根目标、局部目标、阶段描述、即时目标、参数绑定、当前位置、目标站位、资源投放点、剩余步数和相关世界版本。
++
++例如，“创造采集机会”中的 `place-resource` 不再只发送枚举 `access-open`：在到达站位前，即时任务是安全接近站位；到达后才是投放。问题说明明确：一个动作可以通过中间进展服务于阶段，不要求单步完成整个技能。
++
++这些是技能与前置条件的语义，不是最佳动作 ID、规则评分或 oracle 答案。相同事实包同时用于规则与模型，候选仍保持中立顺序。上下文放在共享证据中一次，各独立题只引用它，不为每个候选复制全文。
++
++上下文版本为 `gs/skill-task-context/v042`。涉及新上下文的经典选择问题为 `gs/select/v042`，判断图问题为 `gs/judgments/v042/{strategy}`。候选事实版本未变。
++
++## 2. 弃权不是物理失败，更不是自动“缺少技能”
++
++子层返回 none 时，记录 `decision_blocked:no_local_suitable_action`；父层已有可用 access 技能但仍弃权时，记录 `decision_blocked:parent_no_suitable_skill`。两种情况都在当前根运行中暂停，不把同一个问题升级成重复技能生成。
++
++引擎返回 `paused`，实验服务映射为终止状态 `blocked`，区别于操作员可以继续的普通 `paused`。这次不是加一轮自动重问：新上下文在首次请求前已补齐；若仍无法判断，导出证据再决定是否进行新的受控实验。不会拿第二高概率动作执行，也不会切回规则假装模型成功。
++
++同一快照版本校验现在覆盖选择器的所有输出，包含弃权。过期的 none 被丢弃为 stale，不会被记成当前技能失败。网络错误、取消与未知执行结果继续使用既有安全路径。
++
++## 3. 实际执行反馈和提案校验反馈分离
++
++新增通用 `Context.executionFeedback`、领域 `repairContext()` 和 `afterTransition()` 扩展。
++
++- `executionFeedback`：最近实际运行的失败分类、技能结构、阶段、绑定、动作/资源变化、候选与真实判断、控制器身份和证据范围。
++- `repairFeedback`：本次生成提案被结构或模拟校验拒绝的原因。
++
++两者可同时传递，校验重试不会覆盖先前执行证据。仍然只有结构性失败且具备已授权修复空间时，才请求生成器。生成器输出经原来的权限与验收路径；最多提案次数和根修复预算不变。
++
++## 4. 重复修复按结构与证据判定
++
++`RecoveryJournal` 保存最多 16 条近期失败。行为规范化包含目标、启动条件、阶段规则、能力、特征、权重与步数预算，不包含标题、ID、来源或无行为意义的标签。
++
++在同一世界、参数绑定、控制器及上下文版本下，相同行为结构会被拒绝，原因 `duplicate_repair_no_new_evidence`。零步失败还防止只改变数字阈值或预算冒充新结构。内部比较使用完整规范化字符串，短指纹仅用于显示。
++
++这不是永久跨环境黑名单，也不是语义等价的通用证明。相关世界条件改变、控制器/问题上下文变更、真正不同的阶段结构可以形成新的实验；具体规则见测试。保守的零步判定仍需根据后续实测调整。
++
++新增 `RepairBlocked` 明确表示“重复/不适当的修复停止”，不会被当成普通 JSON 校验问题反复重试。
++
++## 5. 进展与经验归属
++
++父层反馈区分 `dispatchCompleted`、`physicalChanged`、`physicalProgress`、`localGoalProgress`、`informationProgress` 与 `localSucceeded`。子调用结束不再自动等于任务推进。
++
++持续弃权的受控案例中，首次阻塞产生新的诊断信息，但 `progress=false`、`actionSucceeded=false`，物理回合仍为 0。重复相同证据不会继续获得信息增量。
++
++弃权记录为 `decision_blocked`，不污染“该技能在物理上失败/成功”的样本。真正发生的技能步数耗尽可以留下执行失败证据；根预算耗尽、未知执行、外部干预、取消不冒充正常尝试。新增经验编码前缀 `gs/skill-feedback/v042`，旧版统计留在存储中但不与新反馈语义混用。
++
++## 6. CLI、HTTP 与网页一致显示原因
++
++保留全部 v0.4.1 命令和端点，状态增加可选 `diagnostics`。网页主要状态显示原始 reason，新增“修复诊断”页签，显示修复次数/上限、最新阻塞、完整判断、任务上下文及证据。
++
++`questionStrategy` 表示 direct/batch/serial/dependent 的问题组织；`dispatchStrategy` 表示实际 batch/serial 请求调度。旧 `.strategy` 保留兼容，但不能再单独把它解释成问题组织。失败报告也提供两条维度。
++
++主游戏 `kind=game` 的目标来自游戏，配置中默认 `task=energy` 并非把主游戏换成补能夹具，观测台会标注这一点。测试替身也明确标注，不把 CLI 配置里的 backend=jev 当作实网执行证据。
++
++## 离线回归的实际结果
++
++| 受控实验 | 结果 | S/G 接口次数 | 物理动作 |
++|---|---|---:|---:|
++| 子层持续弃权 | 明确 decision_blocked | 3 / 1 | 0 |
++| 生成后父层持续弃权 | 明确 parent decision_blocked | 2 / 1 | 0 |
++| 同结构改 ID 再提案 | duplicate_repair_no_new_evidence | 见原始账本 | 2（原技能真实失败） |
++| 使用规则、要求上下文完备 | 实际完成 5 颗交付，剩余能量 13 | 82 / 1 | 85 |
++
++所有行真实外部请求为 0。最后一项使用明确的规则测试替身，不是模型读懂新增上下文的证据。报告中的旧 10 次 Jev + 3 次 LLM 是用户实网记录，不能与本地耗时拼成供应商速度对照。
++
++## 安装和迁移
++
++建议解压到新目录，Node.js 22+：
++
++```sh
++npm start
++# http://127.0.0.1:4173/lab
++```
++
++已附编译文件，不需先 npm install。保留自己的 `.env`、`.gs-lab/exports` 与本地修改。发行包不包含密钥或活动会话；内存活动运行仍不能跨服务重启恢复。旧 JSON 继续只读回放。
++
++用户报告提到的本地 `LLM_THINKING`、`LLM_REASONING_EFFORT` 和超时改动没有对应源文件提供，本补丁基于干净发行包，**没有擅自合并这些本地差异**。需要这些配置时请从自己的工作树审阅迁移，不能整目录覆盖后假定仍然生效。服务仅供可信本地使用，不是公网多租户服务。
++
++## 实网复查：先隔离首个子判断
++
++```sh
++# 默认只写冻结请求包，不联网，不推进世界
++npm run probe:child
++
++# 本地服务和密钥已配置、明确授权后，单次 Jev 判断；不调用生成器
++node scripts/probe-child-v042.mjs --live --variant=current --backend=jev --samples=1 --max-requests=1
++```
++
++若要比较旧形状，可用 `--variant=legacy`，建议独立文件记录。legacy 是重新构造旧形状，**不是用户原始请求逐字回放**；这是包级 A/B，目标说明、上下文与问题模板同时有版本变化，不是单字段因果实验。
++
++探针只回答一次冻结状态上的选择；不执行动作、不证明完整通关。模型仍选择 none 应如实记录。当前版本能否改善真实 Jev 选择，需要这个实网检查以及后续完整任务测试；不能用增加修复次数掩盖失败。
++
++完整事故配置仍可用原有 CLI 创建，例如：
++
++```sh
++node bin/gs-lab.mjs create --kind game --scenario guarded --controller hierarchy --strategy direct --backend jev --generator llm --allow-live --max-requests 80 --deadline-ms 600000 --actor agent:incident-v042
++# 使用返回的 runId，打开 viewerUrl
++node bin/gs-lab.mjs start RUN_ID --wait --timeout 620000 --actor agent:incident-v042
++node bin/gs-lab.mjs export RUN_ID --out reports/incident-live-v042.json --actor agent:incident-v042
++```
++
++只在已有明确付费授权时运行后两类命令。本次构建没有执行它们。
++
++## 仍未实现或未证明
++
++没有真实模型质量/速度收益结论；没有自动多级认知诊断或生成判断图；没有变成任意语义技能求解器；没有跨服务崩溃恢复或货币硬预算。诊断与去重属于受控恢复机制，不是人类认知或自我进化的证明。
+--- /dev/null
++++ b/docs/VALIDATION-v0.4.2.md
+@@ -0,0 +1,55 @@
++# G/S Lab v0.4.2 验证记录
++
++## 范围
++
++从干净 v0.4.1 ZIP 修改并编译。依据用户事故报告和前次源码审计建立受控复现，没有拿到两份原始终局 JSON；不将替身结果宣称为 Jev 实测。此次真实 Jev/LLM 请求为 **0，NOT_RUN**。本地 HTTP 模拟请求、规则判断、LLM 模拟服务不算真实外部模型请求。
++
++## 最终代码检查
++
++`npm run check` 重建后 **365 / 365 通过**：保留原 330 项，新增 35 项事故回归（26 项机制/协议 + 9 项共享服务/CLI/HTTP）。原有两处预期问题版本随 v042 更新；未删除旧测试。最终日志 `reports/v042/unit-final.txt`。
++
++检查包括阶段上下文、模型与规则同事实、最终 none 保留、拒绝改选第二名、执行反馈和校验反馈同传、结构重复、新证据允许、根进展分类、旧经验隔离、过期弃权丢弃、父层生成后弃权暂停、网络错误不降级、公开 CLI 原因、同会话观测、重复读取无修复、新字段导出、HTTP SSE 与有限实网探针授权。
++
++## 浏览器检查
++
++**138 / 138 通过**：新诊断页 18 项 + v0.4.1 共享观测台 30 项 + 判断实验台 33 项 + 父子技能界面 31 项 + 旧程序界面 26 项。报告均复制到 `reports/v042`。
++
++本环境不允许直接 HTTP/file 页面导航，实际尝试返回 `ERR_BLOCKED_BY_ADMINISTRATOR`。测试用 Chromium 的 `set_content` 装载交付 HTML 字节。共享观测台通过测试桥连接真实本地 HTTP 会话，页面与 CLI 读取同一个 runId；浏览器流用测试桥送达，原生网络 SSE 由 Node 集成测试单独验证。这不能写成原生浏览器 HTTP 导航或所有部署方式通过。
++
++截图由相同字节和本地替身会话实际渲染。画面有“测试替身”标记，不冒充真实 Jev。移动端为 390px Chromium；没有 Safari/Firefox/公网部署验证。
++
++## 受控事故复现
++
++| 案例 | 新结果 | S/G 接口调用 | 物理动作 |
++|---|---|---:|---:|
++| 子层持续弃权 | decision_blocked:no_local_suitable_action | 3 / 1 | 0 |
++| 已生成后父层持续弃权 | decision_blocked:parent_no_suitable_skill | 2 / 1 | 0 |
++| 失败后改 ID 提交相同结构 | duplicate_repair_no_new_evidence | 见原始账本 | 2 |
++| 要求新上下文的规则替身 | 成功，交付 5、能量 13 | 82 / 1 | 85 |
++
++所有案例真实外部请求为 0。第一个案例的 `actionSucceeded=false`、`progress=false`，首次信息增量单独为 1；生成器不再被无意义地调用三次。第二个案例检验父层阻塞也不会反复生成。第三个案例已经发生两步真实技能失败，下一次生成输入含执行证据，改名字提案被阻止。最后一项证明任务上下文连线与规则路径不回归，不证明实际模型已理解。
++
++用户报告中的旧值为 10 次 Jev + 3 次 LLM；本地测试复现的是相同控制机制，不是同一批网络响应。不能由调用差异推算真实美元节省或供应商响应提速。
++
++## 既有离线基准重跑
++
++`npm run bench:v03` 保留旧行为：果园规则 76 步/22 能量，精确序列 72/46，父子技能冷/暖 85/13。镜像对应 71/27、71/47、89/9。
++
++`npm run bench:v04` 重跑 **52 组**（16 固定任务、16 观察/干预/截止/请求预算边界、20 主世界）；主世界和固定任务保持规则参照，边界测试允许预期停止，不能称为 52 组全通关。合成截止依赖机器负载；不是模型延迟。参考最优仅限旧版本已经定义的小静态 BFS 夹具。
++
++## 尚待实网
++
++`npm run probe:child` 默认输出 NOT_RUN，保存一次冻结 child 包而不执行世界。明确授权和请求上限后才可使用 --live。此探针隔离首个子判断，不调用生成器；legacy 为重建旧请求形状。首步选对仍不等于整任务可靠，需要随后完整任务测试。
++
++没有证明新增语义上下文必定改变 Jev 的选择，也没有证明模型错误全部消失。此版修复受控恢复、重复计算、证据归属和可观察性；未新增自动认知诊断、深层递归或自我进化。
++
++## 构建环境与交付复验
++
++Node.js v22.16.0、TypeScript 5.8.3、Chromium。包含编译文件，运行时无 npm 第三方依赖。服务端密钥没有进入压缩包。最终干净解压结果及 SHA-256 复验以 `reports/v042/GATE-v042.json` 的 cleanExtract 字段为准。
++
++通过这些测试不代表无缺陷或生产安全认证。服务仍为可信本机实验使用，内存运行不跨重启恢复。
++
++
++## 干净解压验收结果
++
++已从候选发布 ZIP 解压到全新目录，执行 `npm run check`：**365 / 365 通过**。重建后检查归档中 461 个清单文件，SHA-256 差异 **0**。本次记录随后加入正式封包；不再改变可执行源码。最终发布 ZIP 的归档清单及额外封包复验收录在独立 verification ZIP 中。
+--- a/package.json
++++ b/package.json
+@@ -1,9 +1,9 @@
+ {
+   "name": "tuanzi-gs-lab",
+-  "version": "0.4.1",
++  "version": "0.4.2",
+   "private": true,
+   "type": "module",
+-  "description": "\u522b\u8ba9\u56e2\u5b50\u997f\u6b7b \u2014 a transparent, playable domain adapter for the G/S TypeScript runtime",
++  "description": "别让团子饿死 — a transparent, playable domain adapter for the G/S TypeScript runtime",
+   "engines": {
+     "node": ">=22"
+   },
+@@ -26,7 +26,11 @@
+     "lab": "node bin/gs-lab.mjs",
+     "test:lab": "node --test tests/lab*.test.mjs",
+     "test:browser:041": "python scripts/browser-v041.py",
+-    "demo:agent": "node examples/agent/compare.mjs"
++    "demo:agent": "node examples/agent/compare.mjs",
++    "test:incident": "node --test tests/incident042*.test.mjs",
++    "bench:incident": "node scripts/incident-v042.mjs",
++    "test:browser:042": "python scripts/browser-v042.py",
++    "probe:child": "node scripts/probe-child-v042.mjs"
+   },
+   "devDependencies": {
+     "typescript": "5.8.3"
+--- a/public/index.html
++++ b/public/index.html
+@@ -4,7 +4,7 @@
+   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <meta name="theme-color" content="#304b38">
+   <meta name="description" content="别让团子饿死：一个能干预世界、观察候选与策略更新的 G/S 引擎实验台。默认离线程序搜索，无需 API Key。">
+-  <title>团子 v0.4.1 · G/S 离线试玩</title>
++  <title>团子 v0.4.2 · G/S 离线试玩</title>
+   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23304b38'/%3E%3Cellipse cx='32' cy='37' rx='20' ry='18' fill='%23fff7e7'/%3E%3Ccircle cx='26' cy='37' r='2' fill='%23304b38'/%3E%3Ccircle cx='38' cy='37' r='2' fill='%23304b38'/%3E%3Cpath d='M32 20Q31 7 47 10Q47 21 32 20' fill='%23a7c17c'/%3E%3C/svg%3E">
+   <link rel="stylesheet" href="./app.css">
+ </head>
+--- a/public/lab.css
++++ b/public/lab.css
+@@ -1 +1,4 @@
+ :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#283e31;background:#f5f5ed;font-size:14px;--line:#e0e4d7;--muted:#788574;--green:#304b38;--soft:#eaf0e0;--amber:#936840}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button,a{touch-action:manipulation}button{border:1px solid var(--line);border-radius:9px;padding:9px 13px;background:#fff;color:var(--green);cursor:pointer;font-weight:550;transition:background .15s}button:hover:not(:disabled){background:#edf3e7}button:disabled{opacity:.38;cursor:not-allowed}.primary{background:var(--green);color:white;border-color:var(--green)}.primary:hover:not(:disabled){background:#466248}.danger{color:#915747}a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}input,select{min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px;background:#fff;color:#304734;width:100%}label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}h1,h2,h3,p{margin:0}header{display:flex;justify-content:space-between;align-items:center;padding:22px 30px;border-bottom:1px solid var(--line);background:#fbfbf6}.brand{display:flex;align-items:center;gap:12px}.mark{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#304b38;color:#e9f2d4;font-weight:800;font-size:22px}.brand-name{font-size:15px;font-weight:750;letter-spacing:.09em}.subbrand{color:var(--muted);font-size:10px;letter-spacing:.12em;margin-top:4px}.header-right{display:flex;align-items:center;gap:17px;font-size:12px}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#f4f7ed;border-radius:30px;padding:5px 9px;font-size:11px;white-space:nowrap}.dot{width:6px;height:6px;background:#809866;border-radius:50%}.dot.off{background:#b18463}.layout{display:grid;grid-template-columns:240px minmax(400px,1fr) 300px;gap:20px;max-width:1660px;margin:auto;padding:24px}.sidebar,.details{min-width:0}.panel{background:#fdfef9;border:1px solid var(--line);border-radius:16px;padding:17px;margin-bottom:16px}.panel h2{font-size:14px;font-weight:650}.panel h3{font-size:12px;letter-spacing:.05em}.eyebrow{font-size:10px;color:#8b967f;letter-spacing:.16em;font-weight:650;margin-bottom:9px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.runs{margin-top:12px;max-height:330px;overflow:auto}.run-link{display:block;text-align:left;width:100%;margin:6px 0;padding:11px;border-radius:11px;font-weight:400;overflow:hidden}.run-link.active{border-color:#94aa7c;background:#edf2e5}.run-link strong{display:block;font-size:12px;margin-bottom:4px}.run-link small{display:block;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis}.empty-note{font-size:12px;color:var(--muted);line-height:1.8;padding:14px 0}.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.config-grid label{margin-top:5px}.checkbox{display:flex;align-items:center;gap:7px;line-height:1.6}.checkbox input{width:auto}details{margin-top:12px}summary{cursor:pointer;font-size:12px;color:#6b7c62}.hint{font-size:11px;color:var(--muted);line-height:1.7;margin-top:10px}.full{width:100%;margin-top:15px}.stage-head{margin:2px 0 17px}.stage-head h1{font-size:25px;font-weight:650;letter-spacing:-.04em;margin:4px 0 9px}.stage-head p{font-size:12px;color:var(--muted);line-height:1.8;overflow-wrap:anywhere}.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:13px 0}.scene{border:1px solid #d8e0cf;border-radius:18px;overflow:hidden;background:#eff3e7;position:relative}.scene canvas{width:100%;aspect-ratio:866/578;display:block}.scene-footer{display:flex;justify-content:space-between;padding:10px 14px;background:#f8faf0;border-top:1px solid #e0e6d7;font-size:11px;color:#718068}.scene-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#f1f4e9ee;padding:25px;gap:13px}.scene-overlay.hidden{display:none}.scene-overlay h2{font-size:21px}.scene-overlay p{max-width:370px;font-size:13px;color:#7c8975;line-height:1.9}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:13px 0}.stat{border:1px solid var(--line);border-radius:12px;background:#fdfef9;padding:12px}.stat .value{font-size:23px;font-weight:600;font-variant-numeric:tabular-nums}.stat .label{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5}.owner-box{padding:12px;background:#edf2e4;border-radius:10px;margin-top:12px;font-size:12px;line-height:1.8;overflow-wrap:anywhere}.owner-box span{color:var(--muted);font-size:11px}.metric-row{display:flex;justify-content:space-between;gap:12px;font-size:11px;line-height:2.1}.metric-row span{color:var(--muted)}.metric-row b{font-weight:550;text-align:right;overflow-wrap:anywhere;max-width:65%}.code{font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;margin-top:12px;padding:12px;background:#f2f4ed;border-radius:10px;color:#526447}.activity{max-height:260px;overflow:auto;margin-top:12px}.activity-item{display:grid;grid-template-columns:40px 1fr;gap:7px;padding:7px 0;border-bottom:1px solid #eef0e8;font-size:11px}.activity-item small{color:#8e9a86;font-family:monospace}.activity-item b{font-weight:500;overflow-wrap:anywhere}.activity-item p{color:#8b9683;font-size:10px;line-height:1.5}.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.tabs button{font-size:11px;padding:6px 10px}.replay-bar{background:#e8eedf;padding:11px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:11px;margin:12px 0}.replay-bar input{padding:0}.hidden{display:none!important}.notice{background:#f3ede0;border:1px solid #e7dcc4;border-radius:10px;padding:12px;line-height:1.7;font-size:11px;color:#8a724a;margin-top:12px}.footer{padding:18px 30px;text-align:center;border-top:1px solid var(--line);color:#8a957f;font-size:11px;line-height:1.9}#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#304b38;color:#fff;max-width:min(600px,90vw);padding:14px 20px;border-radius:13px;box-shadow:0 5px 20px #1c311c24;font-size:12px;z-index:100;line-height:1.7}.spin{animation:pulse 1.5s ease-in-out infinite}@keyframes pulse{50%{opacity:.4}}.connection-error{margin:20px;max-width:600px;line-height:1.8}.small{font-size:11px}.import{display:inline-block;margin-top:8px;font-size:11px}.import input{font-size:11px;padding:5px;margin-top:5px}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #aec886;outline-offset:2px}@media(min-width:1500px){.layout{grid-template-columns:250px minmax(550px,1fr) 310px;gap:24px}}@media(max-width:1150px){.layout{grid-template-columns:220px minmax(0,1fr);padding:18px;gap:16px}.details{grid-column:2;display:grid;grid-template-columns:1fr 1fr;gap:14px}.details .panel{margin:0}.details .wide{grid-column:1/-1}.sidebar{grid-row:span 2}}@media(max-width:730px){header{padding:16px}.subbrand{font-size:8px}.header-right{gap:8px;font-size:10px}.layout{display:flex;flex-direction:column;padding:12px;gap:12px}.main-stage{order:0}.sidebar{order:1;display:grid;grid-template-columns:1fr 1fr;gap:12px}.details{order:2;grid-template-columns:1fr}.details .wide{grid-column:1}.sidebar .panel{padding:12px;margin:0}.stage-head h1{font-size:22px}.stats{gap:6px}.stat{padding:9px}.stat .value{font-size:20px}.toolbar button{font-size:12px;padding:8px 10px}.footer{padding:15px}.header-right .legacy-link{display:none}.scene-footer{font-size:10px}.sidebar .config-grid{grid-template-columns:1fr}.run-link strong{font-size:11px}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
++
++/* v0.4.2: exact stop cause stays readable on narrow screens. */
++#stop-detail{margin:10px 0;overflow-wrap:anywhere;line-height:1.65} .metric-row b{overflow-wrap:anywhere;max-width:64%;text-align:right}
+--- a/public/lab.html
++++ b/public/lab.html
+@@ -1 +1 @@
+-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#304b38"><title>G/S Lab v0.4.1 · Agent 实验观测台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/lab.css"></head><body><div id="lab-app"></div><noscript>需要启用 JavaScript。CLI 与 HTTP API 不依赖网页。</noscript><script src="/lab.js"></script></body></html>
++<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#304b38"><title>G/S Lab v0.4.2 · Agent 实验观测台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/lab.css"></head><body><div id="lab-app"></div><noscript>需要启用 JavaScript。CLI 与 HTTP API 不依赖网页。</noscript><script src="/lab.js"></script></body></html>
+--- /dev/null
++++ b/scripts/browser-v042.py
+@@ -0,0 +1,95 @@
++"""Browser operates shipped viewer bytes with a LOCAL HTTP transport fixture.
++The sandbox denies HTTP navigation. Real SSE wire behavior is tested separately in lab-http.test.mjs.
++The fixture substitutes fetch with real HTTP calls and a JSON-cursor-to-stream adapter, not fake game results.
++"""
++import os,sys,json,time,pathlib,subprocess,urllib.request,urllib.error
++from playwright.sync_api import sync_playwright
++R=pathlib.Path(__file__).resolve().parent.parent; REPORT=R/'reports/v042'; REPORT.mkdir(parents=True,exist_ok=True)
++BASE=os.environ.get('GS_LAB_URL','http://127.0.0.1:4183'); checks=[];errors=[]
++
++def check(name,value):
++ checks.append({'name':name,'pass':bool(value)})
++ print(name,bool(value),flush=True)
++ (REPORT/'browser-progress.json').write_text(json.dumps(checks,ensure_ascii=False,indent=2))
++ if not value: raise AssertionError(name)
++
++def http(req):
++ url=req['url'];url=BASE+url if url.startswith('/') else url
++ body=req.get('body');request=urllib.request.Request(url,data=body.encode() if body is not None else None,method=req.get('method','GET'),headers=req.get('headers',{}))
++ try:
++  with urllib.request.urlopen(request,timeout=30) as r:return {'status':r.status,'text':r.read().decode(),'headers':{'content-type':'application/json'}}
++ except urllib.error.HTTPError as e:return {'status':e.code,'text':e.read().decode(),'headers':{'content-type':'application/json'}}
++
++def cli(*args,actor='agent:browser-test'):
++ p=subprocess.run(['node','bin/gs-lab.mjs',*args,'--url',BASE,'--actor',actor],cwd=R,text=True,capture_output=True,timeout=60)
++ if p.returncode: return {'cliError':json.loads(p.stderr),'returncode':p.returncode}
++ return json.loads(p.stdout)
++
++BRIDGE=r"""
++(()=>{
++const originalFetch=window.fetch.bind(window);
++history.replaceState=(_a,_b,url)=>{window.__fixtureURL=url;};
++window.fetch=async(input,init={})=>{
++ const url=String(input);if(!url.startsWith('/api/'))return originalFetch(input,init);
++ if(init.signal?.aborted)throw new DOMException('Aborted','AbortError');
++ if(url.includes('/stream?')){
++  let stopped=false,timer,ctl;const parsed=new URL(url,'http://fixture'),base=parsed.pathname.replace('/stream','/events');let after=Number(parsed.searchParams.get('after')||0);
++  const stream=new ReadableStream({start(controller){ctl=controller;const pump=async()=>{if(stopped)return;try{const r=await __labHttp({url:base+'?after='+after+'&limit=250',method:'GET',headers:init.headers||{}});if(stopped)return;if(r.status!==200)throw Error(r.text);const data=JSON.parse(r.text);for(const e of data.events){after=e.seq;controller.enqueue(new TextEncoder().encode('id: '+e.seq+'\nevent: lab\ndata: '+JSON.stringify(e)+'\n\n'));}timer=setTimeout(pump,25);}catch(e){if(!stopped){stopped=true;controller.error(e);}}};pump();},cancel(){stopped=true;clearTimeout(timer);}});
++  init.signal?.addEventListener('abort',()=>{if(!stopped){stopped=true;clearTimeout(timer);ctl.error(new DOMException('Aborted','AbortError'));}},{once:true});
++  return new Response(stream,{status:200,headers:{'content-type':'text/event-stream'}});
++ }
++ const r=await __labHttp({url,method:init.method||'GET',headers:init.headers||{},body:init.body??null});if(init.signal?.aborted)throw new DOMException('Aborted','AbortError');return new Response(r.text,{status:r.status,headers:r.headers});
++};
++})();
++"""
++
++def mount(browser,width=1512):
++ page=browser.new_page(viewport={'width':width,'height':1100 if width>600 else 844},device_scale_factor=1)
++ page.set_default_timeout(15000);page.on('pageerror',lambda e:errors.append(str(e)));page.expose_function('__labHttp',http)
++ template=(R/'public/lab.html').read_text().replace('<link rel="stylesheet" href="/lab.css">','<style>'+(R/'public/lab.css').read_text()+'</style>').replace('<script src="/lab.js"></script>','<script>'+BRIDGE+'</script><script>'+(R/'public/lab.js').read_text().replace('</script','<\\/script')+'</script>')
++ page.set_content(template,wait_until='load');page.wait_for_function('window.gsLabViewer && document.querySelector("#connection").textContent.includes("连接")',timeout=10000)
++ return page
++
++def select(page,run_id):
++ page.locator('#refresh').click();page.locator('[data-run="'+run_id+'"]').click();page.wait_for_function('(id)=>window.gsLabViewer.snapshot()?.runId===id',arg=run_id,timeout=20000)
++
++def wait_actions(page,n):page.wait_for_function('(n)=>window.gsLabViewer.snapshot()?.physicalActions===n',arg=n,timeout=20000)
++
++try:
++ with sync_playwright() as p:
++  browser=p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox'])
++  created=cli('create','--kind','game','--scenario','guarded','--strategy','direct','--backend','jev','--generator','local','--allow-live','--max-requests','80','--deadline-ms','600000','--label','离线弃权测试 · 不是 Jev 实测')
++  rid=created['runId'];page=mount(browser);select(page,rid)
++  check('042-version-is-visible','0.4.2' in page.locator('header').inner_text())
++  cli('start',rid,'--wait')
++  page.wait_for_function('window.gsLabViewer.snapshot()?.status==="blocked"',timeout=25000)
++  s=cli('status',rid)
++  check('042-cli-and-viewer-same-blocked-world',page.evaluate('window.gsLabViewer.snapshot().world')==s['world'])
++  check('042-no-physical-fallback',s['physicalActions']==0 and s['world']['revision']==1)
++  check('042-exact-cause-main-status', 'decision_blocked:no_local_suitable_action' in page.locator('#stop-detail').inner_text())
++  check('042-runtime-repair-budget-shown','修复次数 / 上限' in page.locator('#runtime').inner_text() and '1 / 3' in page.locator('#runtime').inner_text())
++  check('042-organisation-vs-dispatch-separated','问题组织' in page.locator('#runtime').inner_text() and '请求调度' in page.locator('#runtime').inner_text())
++  check('042-mock-source-honestly-labeled','测试替身' in page.locator('#run-tags').inner_text())
++  page.locator('[data-tab="recovery"]').click()
++  check('042-recovery-context-visible','gs/skill-task-context/v042' in page.locator('#detail-json').inner_text())
++  check('042-abstention-response-visible','"choice": null' in page.locator('#detail-json').inner_text())
++  check('042-stage-and-target-visible','resource-placement-stand' in page.locator('#detail-json').inner_text())
++  page.locator('[data-tab="config"]').click()
++  check('042-task-field-game-not-energy-fixture','不使用 energy 夹具' in page.locator('#detail-json').inner_text())
++  check('042-terminal-block-cannot-start',page.locator('#start').is_disabled())
++  check('042-no-overflow-desktop',page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
++  page.locator('[data-tab="events"]').click();page.screenshot(path=str(REPORT/'desktop-recovery-v042.png'),full_page=True)
++  current=cli('status',rid);page.locator('#refresh').click();time.sleep(.1)
++  check('042-reading-does-not-trigger-repair',cli('status',rid)['requests']==current['requests'])
++  report=cli('export',rid,'--out',str(REPORT/'browser-fault-fixture.json'))
++  archive=json.loads((REPORT/'browser-fault-fixture.json').read_text())
++  check('042-export-same-diagnostics',archive['state']['diagnostics']['latestFailure']['reason']==s['reason'])
++  mobile=mount(browser,390);select(mobile,rid);mobile.locator('#stop-detail').wait_for(state='visible',timeout=10000)
++  check('042-mobile-reason-readable',mobile.locator('#stop-detail').is_visible() and 'decision_blocked' in mobile.locator('#stop-detail').inner_text())
++  check('042-no-overflow-mobile',mobile.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
++  mobile.screenshot(path=str(REPORT/'mobile-recovery-v042.png'),full_page=True)
++  mobile.close();page.close();browser.close()
++ check('042-no-browser-uncaught-errors',len(errors)==0)
++ (REPORT/'browser-v042.json').write_text(json.dumps({'checks':checks,'errors':errors,'transport':'set_content + real local HTTP, SSE delivered through existing polling-to-stream test bridge; no actual model','fixture':'offline child-abstention injection'},ensure_ascii=False,indent=2))
++except Exception as e:
++ (REPORT/'browser-v042.json').write_text(json.dumps({'checks':checks,'errors':errors,'failure':str(e)},ensure_ascii=False,indent=2));raise
+--- a/scripts/build.mjs
++++ b/scripts/build.mjs
+@@ -36,6 +36,6 @@
+ modules.clear();
+ const labEntry=visit(path.join(dist,'src/lab/viewer.js'));
+ const labRegistry=[...modules].map(([id,{output,deps}])=>`${JSON.stringify(id)}:{deps:${JSON.stringify(deps)},factory:function(module,exports,require){\n${output}\n}}`).join(',\n');
+-const labBundle=`/* G/S v0.4.1 shared-run observer. */\n(()=>{'use strict';const modules={${labRegistry}};const cache=Object.create(null);function load(id){if(cache[id])return cache[id].exports;const d=modules[id],m={exports:{}};cache[id]=m;d.factory(m,m.exports,n=>load(d.deps[n]));return m.exports;}load(${JSON.stringify(labEntry)});})();\n`;
++const labBundle=`/* G/S v0.4.2 shared-run observer. */\n(()=>{'use strict';const modules={${labRegistry}};const cache=Object.create(null);function load(id){if(cache[id])return cache[id].exports;const d=modules[id],m={exports:{}};cache[id]=m;d.factory(m,m.exports,n=>load(d.deps[n]));return m.exports;}load(${JSON.stringify(labEntry)});})();\n`;
+ fs.writeFileSync(path.join(root,'public/lab.js'),labBundle);
+ console.log(`Built observer: ${modules.size} modules; browser owns no GSEngine.`);
+--- /dev/null
++++ b/scripts/incident-v042.mjs
+@@ -0,0 +1,21 @@
++/** Reproducible offline regression. No tokens, model keys, or external network are used. */
++import fs from 'node:fs';import path from 'node:path';
++import {fixture,finish,access} from './lib/incident-fixtures.mjs';
++import {SkillSession} from '../dist/src/skills/runtime.js';
++import {createWorld} from '../dist/src/game/world.js';
++import {makeSkill} from '../dist/src/skills/spec.js';
++const root=path.resolve(new URL('..',import.meta.url).pathname),dir=path.join(root,'reports/v042');fs.mkdirSync(dir,{recursive:true});
++const rows=[];
++for(const mode of ['abstain-child','abstain-parent','context-gated-rule']){
++ const {session,stats}=fixture(mode);await finish(session);const world=session.world.snapshot();
++ const trace=session.export(),file='incident-'+mode+'.json';fs.writeFileSync(path.join(dir,file),JSON.stringify({scope:'OFFLINE TEST DOUBLE; not a real Jev/LLM run',stats,trace},null,2));
++ rows.push({case:mode,result:session.lastResult,physicalActions:world.turn,energy:world.energy,delivered:world.delivered,
++  selectorInterfaceCalls:stats.selects,generatorInterfaceCalls:stats.generates,actualExternalRequests:0,
++  rootRepairs:session.rootEngine.counters.repairs,progress:session.rootEngine.history.map(t=>t.feedback),trace:file});
++}
++const bad={...makeSkill('access-open',['wait-access'],'llm'),id:'bad-wait',maxSteps:2};let generationInputs=[];
++const duplicate=new SkillSession(createWorld('guarded'),'reactive-live',undefined,{initialSkills:[bad],providers:{generate:async input=>{generationInputs.push(structuredClone(input));return {output:{...bad,id:'renamed-identical'}};}}});
++await finish(duplicate);fs.writeFileSync(path.join(dir,'incident-duplicate.json'),JSON.stringify({scope:'OFFLINE TEST DOUBLE',generationInputs,trace:duplicate.export()},null,2));
++rows.push({case:'failed-execution-renamed-proposal',result:duplicate.lastResult,physicalActions:duplicate.world.snapshot().turn,generatorInterfaceCalls:generationInputs.length,actualExternalRequests:0,executionFeedbackPresent:!!generationInputs[0]?.executionFeedback,trace:'incident-duplicate.json'});
++const result={schema:'gs/incident-regression/v042',actualExternalRequests:0,scope:'Control-flow and contract tests. No claim of live model repair. User original raw exports were not available.',rows};
++fs.writeFileSync(path.join(dir,'incident-summary.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
+--- /dev/null
++++ b/scripts/lib/incident-fixtures.mjs
+@@ -0,0 +1,27 @@
++/** OFFLINE deterministic test doubles. Never a simulation of Jev's semantic competence. */
++import {createWorld} from '../../dist/src/game/world.js';
++import {SkillSession} from '../../dist/src/skills/runtime.js';
++import {makeSkill} from '../../dist/src/skills/spec.js';
++import {selectPacket} from '../../dist/src/skills/facts.js';
++export const access=()=>makeSkill('access-open',['place-resource','wait-access'],'llm');
++export const signal=()=>new AbortController().signal;
++export function answer(cs,id){return {choice:id,confidence:id?1:.58,
++ probabilities:Object.fromEntries(cs.map(c=>[c.id,c.id===id?1:id?0:0])),
++ suitability:Object.fromEntries(cs.map(c=>[c.id,c.id===id?1:0])),abstainProbability:id?0:1};}
++export function fixture(mode='abstain-child',extras={}){
++ const stats={selects:0,generates:0,inputs:[],packets:[],actualExternalRequests:0};
++ const providers={source:'test-provider',identity:'offline-incident-fixture/'+mode,
++  select:async input=>{stats.selects++;stats.packets.push(structuredClone(input.packet));
++   let id=null;
++   if(mode==='context-gated-rule'){
++    if(input.level==='parent'||input.packet.taskContext?.immediateObjective?.description)id=selectPacket(input.packet);
++   }else if(mode==='abstain-parent')id=null;
++   else if(input.level==='parent')id=input.candidates.find(c=>c.facts?.contract==='access-open')?.id??null;
++   return {output:answer(input.candidates,id)};
++  },
++  generate:async input=>{stats.generates++;stats.inputs.push(structuredClone(input));return {output:{...access(),id:'offline-proposal-'+stats.generates}};}
++ };
++ const session=new SkillSession(createWorld('guarded'),'reactive-live',undefined,{providers,...extras});
++ return {session,stats};
++}
++export async function finish(s,n=400){for(let i=0;i<n&&!s.finished;i++)await s.step();return s;}
+--- /dev/null
++++ b/scripts/lib/serve-incident-fixture-v042.mjs
+@@ -0,0 +1,20 @@
++/** TEST SERVER ONLY. Uses explicit offline doubles, never contacts real models or reads .env. */
++import http from 'node:http';import fs from 'node:fs';import path from 'node:path';
++import {ExperimentManager} from '../../dist/src/lab/manager.js';import {createLabHandler} from '../../server/lab/http.mjs';
++import {access} from './incident-fixtures.mjs';
++const root=path.resolve(new URL('../..',import.meta.url).pathname),port=Number(process.env.PORT??4183);
++const providers={ready:()=>true,backend:()=>({id:'OFFLINE-FAULT-INJECTION-NOT-JEV',kind:'mock',ask:async i=>{
++ const p=i.state.evidence.packet,q=i.questions.choose;if(!q)throw Error('Test server supports direct only');let chosen='none';
++ if(p.level==='parent'){const n=p.candidates.findIndex(c=>c.facts.contract==='access-open');if(n>=0)chosen='a'+n;}
++ return {answers:{choose:{type:'choice',choice:chosen,confidence:1,probabilities:Object.fromEntries(Object.keys(q.criteria).map(k=>[k,k===chosen?1:0]))}},model:'OFFLINE-FAULT-INJECTION'};
++ }}),generate:async()=>({output:access()})};
++const manager=new ExperimentManager(providers),token='test-only-'+crypto.randomUUID(),base=`http://127.0.0.1:${port}`;
++const handler=createLabHandler({manager,token,baseUrl:base});
++const server=http.createServer(async(req,res)=>{
++ if(req.url==='/api/status'){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({token,jevReady:true,llmReady:true,fixture:true}));return;}
++ const u=new URL(req.url,base);if(await handler(req,res,u))return;
++ const name={'/lab':'lab.html','/lab.js':'lab.js','/lab.css':'lab.css','/':'index.html','/app.js':'app.js','/app.css':'app.css'}[u.pathname];
++ if(!name){res.writeHead(404);res.end();return;}res.writeHead(200,{'content-type':name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':'text/html'});res.end(fs.readFileSync(path.join(root,'public',name)));
++});
++server.listen(port,'127.0.0.1',()=>console.log('OFFLINE TEST SERVER ONLY '+base));
++process.on('SIGTERM',()=>{manager.close();server.closeAllConnections();server.close(()=>process.exit());});
+--- /dev/null
++++ b/scripts/probe-child-v042.mjs
+@@ -0,0 +1,44 @@
++#!/usr/bin/env node
++/** Frozen first child decision. Default writes NOT_RUN; --live needs explicit budget and local server.
++ * Legacy variant is a reconstructed old-shaped packet, not either missing incident export. */
++import fs from 'node:fs';import path from 'node:path';
++import {createWorld} from '../dist/src/game/world.js';
++import {makeSkill} from '../dist/src/skills/spec.js';
++import {createFrame,candidates} from '../dist/src/skills/behavior.js';
++import {skillTaskContext,localGoalText} from '../dist/src/skills/context.js';
++import {projectState} from '../dist/src/skills/experience.js';
++import {packet} from '../dist/src/skills/facts.js';
++import {actionKey} from '../dist/src/planning/programs.js';
++import {describeAction} from '../dist/src/game/domain.js';
++import {evaluatePacket,compileDecision} from '../dist/src/decision/pipeline.js';
++const opts={};for(const arg of process.argv.slice(2)){if(!arg.startsWith('--'))throw Error('Use --name=value or --live');const [k,...v]=arg.slice(2).split('=');if(!['live','backend','variant','samples','max-requests','url','out'].includes(k))throw Error('Unknown option: '+k);opts[k]=v.length?v.join('='):true;}
++const live=opts.live===true,variant=opts.variant??'current',kind=opts.backend??'jev',samples=Number(opts.samples??1),limit=Number(opts['max-requests']??0);
++if(!['current','legacy'].includes(variant)||!['jev','llm'].includes(kind)||!Number.isSafeInteger(samples)||samples<1||samples>5)throw Error('Invalid variant, backend, or samples (1..5)');
++if(live&&(!Number.isSafeInteger(limit)||limit<samples||limit>12))throw Error('--live requires explicit --max-requests=N (samples <= N <= 12)');
++const state=createWorld('guarded'),spec=makeSkill('access-open',['place-resource','wait-access'],'authored'),binding={targetId:state.guards[0].id,targetBerryIds:state.berries.map(b=>b.id),amount:0};
++const frame=createFrame(state,binding),offered=candidates(spec,frame,state);
++const p=packet({level:'child',goal:variant==='current'?localGoalText(spec):spec.success,
++ ...(variant==='current'?{taskContext:skillTaskContext(spec,frame,state)}:{}),snapshotRevision:String(state.revision),policyVersion:1,orderSeed:441,
++ scope:{name:'frozen-incident-probe/v042',note:'Same registered capabilities and deterministic binding; no rule score or selected answer.'},
++ projection:projectState(state,spec.features,spec.phases[frame.phase].rule),preferences:spec.weights,
++ candidates:offered.map(c=>({id:actionKey(c.action),description:describeAction(c.action),action:c.action,facts:c.facts}))});
++const out={schema:'gs/frozen-child-probe/v042',status:live?'REQUESTED':'NOT_RUN',variant,backend:kind,scope:'Frozen one-step diagnostic only. No LLM generation, no physical execution, no root success conclusion. Legacy is reconstruction, not raw replay.',packet:p,graph:compileDecision(p,'direct'),externalRequests:0,samples:[]};
++if(live){
++ const base=new URL(String(opts.url??'http://127.0.0.1:4173'));
++ if(base.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(base.hostname)||base.username||base.password)throw Error('Local HTTP server only');
++ const statusResponse=await fetch(new URL('/api/status',base),{signal:AbortSignal.timeout(5000)});if(!statusResponse.ok)throw Error('Cannot connect to local service');
++ const status=await statusResponse.json();if(!status.token||!(kind==='jev'?status.jevReady:status.llmReady))throw Error('Requested backend not configured');
++ const backend={id:kind+'/configured-frozen-probe',kind,ask:async(input,signal)=>{
++  if(out.externalRequests>=limit)throw Error('probe_request_budget');out.externalRequests++;
++  const res=await fetch(new URL('/api/judgment',base),{method:'POST',headers:{'x-gs-token':status.token,'content-type':'application/json'},body:JSON.stringify({backend:kind,...input}),signal});
++  const value=await res.json();if(!res.ok)throw Error('Provider bridge failed: '+String(value.error??res.status));return value;
++ }};
++ for(let i=0;i<samples;i++){
++  try{const r=await evaluatePacket(p,'direct',backend,{signal:AbortSignal.timeout(30000),currentKey:()=>p.id,timeoutMs:25000,maxRequests:1,maxQuestions:1});
++   out.samples.push({index:i+1,status:'returned',judgment:r.judgment,report:r.report});}
++  catch(e){out.samples.push({index:i+1,status:'failed',reason:String(e),report:e.report??null});break;}
++ }
++ out.status=out.samples.every(s=>s.status==='returned')?'COMPLETED':'FAILED';
++}
++const dest=path.resolve(String(opts.out??`reports/v042/probe-child-${variant}-${live?'live':'NOT_RUN'}.json`));fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,JSON.stringify(out,null,2));
++console.log(JSON.stringify({status:out.status,variant,backend:kind,externalRequests:out.externalRequests,samples:out.samples.length,report:dest},null,2));
+--- a/server.mjs
++++ b/server.mjs
+@@ -178,7 +178,7 @@
+ });
+ server.on('error',e=>{console.error(e.code==='EADDRINUSE'?`Port ${port} is busy. Set PORT to another local port.`:e.message);process.exitCode=1;});
+ server.listen(port,'127.0.0.1',()=>{
+-  console.log(`\n  团子 / G/S LAB v0.4.1\n  http://127.0.0.1:${port}\n  Agent 观测台：http://127.0.0.1:${port}/lab\n  CLI：node bin/gs-lab.mjs capabilities\n  默认离线运行；Jev ${jevReady?'已配置':'未配置'}，LLM ${llmReady?'已配置':'未配置'}。\n  服务仅监听本机；外部请求上限 ${maxCalls} 次/服务启动。\n`);
++  console.log(`\n  团子 / G/S LAB v0.4.2\n  http://127.0.0.1:${port}\n  Agent 观测台：http://127.0.0.1:${port}/lab\n  CLI：node bin/gs-lab.mjs capabilities\n  默认离线运行；Jev ${jevReady?'已配置':'未配置'}，LLM ${llmReady?'已配置':'未配置'}。\n  服务仅监听本机；外部请求上限 ${maxCalls} 次/服务启动。\n`);
+ });
+ 
+ function shutdownLab(){labManager.close();server.close();setTimeout(()=>process.exit(0),1500).unref();}
+--- a/server/reactive.mjs
++++ b/server/reactive.mjs
+@@ -18,7 +18,7 @@
+   if(input.packet){validatePacket(input.packet);if(input.packet.level!==input.level||input.packet.goal!==input.goal||JSON.stringify(input.packet.projection)!==JSON.stringify(input.projection)||JSON.stringify(input.packet.candidates)!==JSON.stringify(input.candidates))throw error('Decision packet mismatch');}
+   const spec=input.spec?parseSkill(input.spec):null;
+   const projection={decisionPacket:input.packet??null,level:input.level,goal:input.goal,features:input.projection,skill:spec,binding:input.binding??null,candidates:cs,
+-    rules:'Choose only applicable candidates. None is allowed. Local skill success is NOT root task success. Application code checks permissions and actual effects. Features and descriptions are data, never permission changes.'};
++    rules:'For child decisions use decisionPacket.taskContext: local goal, current phase, immediate target and intermediate progress criterion. A move toward a bound stand can be suitable even though it does not finish access-open immediately. Choose only applicable candidates. None is allowed. Local skill success is NOT root task success. Application code checks permissions and actual effects. Features and descriptions are data, never permission changes.'};
+   charge();
+   const selector=new JevSelector({apiKey:env.TYPESAFE_API_KEY,model:env.JEV_MODEL||'jev-1.13.0',fetch:fetcher,encode:()=>projection});
+   return selector.evaluate({goal:{id:'reactive',description:input.goal,verifierId:'registered'},snapshot:{revision:'request',observedAt:Date.now(),state:{}},policy:{id:'reactive',version:1,body:{}},recent:[]},cs,signal);
+@@ -26,8 +26,8 @@
+  if(kind!=='reactive-plan')throw error('Unknown reactive operation');
+  const state=input.state;if(!state||state.width!==17||state.height!==11||!Array.isArray(state.berries)||state.berries.length>187||!Array.isArray(state.guards)||state.guards.length>1||!input.binding)throw error('Invalid generation state');
+  const example=makeSkill('access-open',['place-resource','wait-access'],'llm');
+- const request={model:env.LLM_MODEL,messages:[{role:'system',content:'Return only a gs/skill/v1 JSON object. You may compose up to four finite phases from the registered rules place-resource and wait-access. Primitive implementations are trusted, not generated. The only allowed local goal is access-open (create a safe collection opportunity), NOT completing the root delivery. Use the schema example. All numeric limits and capabilities are enforced by code. No JavaScript, new tools, arbitrary predicates, or root-goal changes. place-resource binds a safe resource placement from the current world; its until must be resource-placed. wait-access uses local-success. A rejected proposal may be repaired using the supplied validationFeedback.'},
+- {role:'user',content:JSON.stringify({example,state,binding:input.binding,validationFeedback:input.feedback??null})}]};
++ const request={model:env.LLM_MODEL,messages:[{role:'system',content:'Return only a gs/skill/v1 JSON object. You may compose up to four finite phases from the registered rules place-resource and wait-access. Primitive implementations are trusted, not generated. The only allowed local goal is access-open (create a safe collection opportunity), NOT completing the root delivery. Use the schema example. All numeric limits and capabilities are enforced by code. No JavaScript, new tools, arbitrary predicates, or root-goal changes. place-resource binds a safe resource placement from the current world; its until must be resource-placed. wait-access uses local-success. A rejected proposal may be repaired using validationFeedback. executionFeedback instead describes measured controller failures across runs of skills, including the prior packet and abstention. Renaming a failed skill is not a repair. Never interpret controller abstention as proof the world action is impossible. If the interface cannot repair the diagnosed issue, do not invent tools or permission.'},
++ {role:'user',content:JSON.stringify({example,state,binding:input.binding,validationFeedback:input.feedback??null,executionFeedback:input.executionFeedback??null})}]};
+  if(env.LLM_JSON_MODE!=='false')request.response_format={type:'json_object'};
+  const endpoint=new URL(env.LLM_URL);if(endpoint.protocol!=='https:'&&!(['localhost','127.0.0.1','[::1]'].includes(endpoint.hostname)&&endpoint.protocol==='http:'))throw error('LLM_URL must be HTTPS or local test server',500);
+  charge();const res=await fetcher(endpoint,{method:'POST',headers:{authorization:`Bearer ${env.LLM_API_KEY}`,'content-type':'application/json'},body:JSON.stringify(request),signal});
+--- a/src/decision/pipeline.ts
++++ b/src/decision/pipeline.ts
+@@ -2,31 +2,32 @@
+ import type {DecisionPacket} from '../../vendor/gs-engine-ts/src/decision.js';
+ import {evidenceKey} from '../../vendor/gs-engine-ts/src/decision.js';
+ import type {DecisionGraph,DecisionTask,Question,TypedAnswer,JudgmentBackend,BatchInput,ScheduleReport,ScheduleOptions} from '../../vendor/gs-engine-ts/src/judgment.js';
+-import {runDecisionGraph} from '../../vendor/gs-engine-ts/src/judgment.js';
++import {runDecisionGraph,JudgmentError} from '../../vendor/gs-engine-ts/src/judgment.js';
+ import {parentRule,primitiveRule} from '../skills/facts.js';
+ import type {RootFacts,PrimitiveFacts} from '../skills/facts.js';
+ import type {Weights} from '../skills/spec.js';
+ export type Strategy='direct'|'batch'|'serial'|'dependent';
+ export type Assessment={fit:boolean;priority:number};
+ export type Assessor=(packet:DecisionPacket,candidateId:string)=>Assessment;
++export const questionVersionFor=(p:DecisionPacket,s:Strategy)=>`gs/judgments/${p.taskContext?'v042':'v04'}/${s}`;
+ const levels=['Not useful','Low priority','Routine option','Makes current progress','High priority','Urgent','Necessary now'];
+ const criteria=(p:DecisionPacket)=>Object.fromEntries([['none','No offered candidate is suitable; abstain rather than invent an action.'],...p.candidates.map((c,i)=>['a'+i,{description:c.description,action:c.action,facts:c.facts}])]) as Record<string,Json>;
+ function question(p:DecisionPacket,id:string,kind:'fit'|'priority'):Question{
+  const c=p.candidates.find(c=>c.id===id)!;
+- const instructions={question:kind==='fit'?'Is this candidate suitable to attempt under the CURRENT goal and declared decision preferences? Legal does not mean useful.':'How much priority does this candidate deserve under the CURRENT goal, available evidence and declared preferences?',candidateId:c.id,description:c.description,criterion:kind,goal:p.goal,note:'Judge from evidence.packet. Hard legality and actual outcome are verified outside this question. Do not infer hidden world facts.'};
++ const instructions={question:kind==='fit'?'Is this candidate suitable to attempt under the CURRENT goal and declared decision preferences? Legal does not mean useful.':'How much priority does this candidate deserve under the CURRENT goal, available evidence and declared preferences?',candidateId:c.id,description:c.description,criterion:kind,goal:p.goal,...(p.taskContext?{taskContextRef:'evidence.packet.taskContext',stepCriterion:'Intermediate phase progress counts; this single action need not achieve the terminal goal.'}:{}),note:'Judge from evidence.packet. Hard legality and actual outcome are verified outside this question. Do not infer hidden world facts.'};
+  return kind==='fit'?{type:'noul',instructions}:{type:'score',instructions,criteria:levels};
+ }
+ export function compileDecision(p:DecisionPacket,strategy:Strategy):DecisionGraph{
+  const tasks:DecisionTask[]=[];
+- if(strategy==='direct')tasks.push({id:'choose',dependsOn:[],question:{type:'choice',instructions:{question:'Which candidate best fits the current goal and declared priorities? Choose none if no candidate is suitable.',criterion:'choose',goal:p.goal},criteria:criteria(p)}});
++ if(strategy==='direct')tasks.push({id:'choose',dependsOn:[],question:{type:'choice',instructions:{question:'Which candidate best fits the current goal and declared priorities? Choose none if no candidate is suitable.',criterion:'choose',goal:p.goal,...(p.taskContext?{taskContextRef:'evidence.packet.taskContext',stepCriterion:'Choose a useful intermediate phase action, not only an action that immediately completes the final goal. Keep none if evidence is inadequate.'}:{})},criteria:criteria(p)}});
+  else{
+   for(const [i,c] of p.candidates.entries()){
+    tasks.push({id:'fit'+i,dependsOn:[],question:question(p,c.id,'fit')});
+    if(strategy!=='dependent')tasks.push({id:'priority'+i,dependsOn:[],question:question(p,c.id,'priority')});
+   }
+-  if(strategy==='dependent')tasks.push({id:'choose',dependsOn:p.candidates.map((_,i)=>'fit'+i),question:{type:'choice',instructions:{question:'Choose the best remaining candidate. Options are filtered by the previous suitability answers in dependencyAnswers. None remains available.',criterion:'choose',goal:p.goal},criteria:criteria(p)},bindFrom:{kind:'choice-from-noul',none:'none',threshold:.5,optionTasks:Object.fromEntries(p.candidates.map((_,i)=>['a'+i,'fit'+i]))}});
++  if(strategy==='dependent')tasks.push({id:'choose',dependsOn:p.candidates.map((_,i)=>'fit'+i),question:{type:'choice',instructions:{question:'Choose the best remaining candidate. Options are filtered by the previous suitability answers in dependencyAnswers. None remains available.',criterion:'choose',goal:p.goal,...(p.taskContext?{taskContextRef:'evidence.packet.taskContext',stepCriterion:'Choose a useful intermediate phase action, not only an action that immediately completes the final goal. Keep none if evidence is inadequate.'}:{})},criteria:criteria(p)},bindFrom:{kind:'choice-from-noul',none:'none',threshold:.5,optionTasks:Object.fromEntries(p.candidates.map((_,i)=>['a'+i,'fit'+i]))}});
+  }
+- return {schema:'gs/decision-graph/v1',id:evidenceKey([p.id,strategy]),snapshotKey:p.id,goalVersion:evidenceKey([p.goal,p.preferences]),questionVersion:`gs/judgments/v04/${strategy}`,evidence:{packet:p as unknown as Json},tasks};
++ return {schema:'gs/decision-graph/v1',id:evidenceKey([p.id,strategy]),snapshotKey:p.id,goalVersion:evidenceKey([p.goal,p.preferences]),questionVersion:questionVersionFor(p,strategy),evidence:{packet:p as unknown as Json},tasks};
+ }
+ export function defaultAssessment(p:DecisionPacket,id:string):Assessment{
+  const c=p.candidates.find(c=>c.id===id)!;
+@@ -66,6 +67,10 @@
+  return {choice:chosen,confidence:1,probabilities:Object.fromEntries(p.candidates.map(c=>[c.id,c.id===chosen?1:0])),suitability,abstainProbability:chosen?0:1};
+ }
+ export async function evaluatePacket(p:DecisionPacket,strategy:Strategy,backend:JudgmentBackend,options:Omit<ScheduleOptions,'strategy'>){
+- const graph=compileDecision(p,strategy),report=await runDecisionGraph(graph,backend,{...options,strategy:strategy==='serial'?'serial':'batch'});
+- return {judgment:interpret(p,strategy,report),report,graph};
++ const graph=compileDecision(p,strategy),dispatchStrategy=strategy==='serial'?'serial':'batch';
++ try{
++  const report=await runDecisionGraph(graph,backend,{...options,strategy:dispatchStrategy});
++  report.questionStrategy=strategy;report.dispatchStrategy=dispatchStrategy;
++  return {judgment:interpret(p,strategy,report),report,graph};
++ }catch(e){if(e instanceof JudgmentError){e.report.questionStrategy=strategy;e.report.dispatchStrategy=dispatchStrategy;}throw e;}
+ }
+--- a/src/lab/manager.ts
++++ b/src/lab/manager.ts
+@@ -41,7 +41,7 @@
+   for(const fn of this.listeners)try{fn(structuredClone(e));}catch{/* observers cannot steer or fail the run */}}
+  subscribe(fn:(e:LabEvent)=>void){this.listeners.add(fn);return ()=>this.listeners.delete(fn);}
+  private onEngine=(e:EngineEvent)=>{this.emit('engine',{sourceRunId:e.runId,event:e});};
+- view():LabView{const world=this.world.snapshot(),detail=this.holder?.inspect()??{lastDecision:null,activeSkill:null,lastSkillResult:null};return structuredClone({schema:'gs/lab-state/v1',version:'0.4.1',runId:this.runId,viewerPath:`/lab?run=${this.runId}`,config:this.config,status:this.status,reason:this.reason,owner:this.owner,controlVersion:this.controlVersion,lastSeq:this.seq,busy:this.busy,createdAt:this.createdAt,startedAt:this.startedAt,endedAt:this.endedAt,elapsedMs:this.startedAt?(this.endedAt?Date.parse(this.endedAt)-Date.parse(this.startedAt):Date.now()-Date.parse(this.startedAt)):0,engineWorkMs:this.engineWorkMs,world,worldRevision:String(world.revision),physicalActions:world.turn-this.initial.turn,decisionSteps:this.decisionSteps,requests:this.ledger.requests,externalRequests:this.ledger.externalRequests,questions:this.ledger.questions,...detail,outcome:this.holder?.lastResult??null,interventions:this.editLog,lineage:this.lineage,readOnly:false});}
++ view():LabView{const world=this.world.snapshot(),detail=this.holder?.inspect()??{lastDecision:null,activeSkill:null,lastSkillResult:null};return structuredClone({schema:'gs/lab-state/v1',version:'0.4.2',runId:this.runId,viewerPath:`/lab?run=${this.runId}`,config:this.config,status:this.status,reason:this.reason,owner:this.owner,controlVersion:this.controlVersion,lastSeq:this.seq,busy:this.busy,createdAt:this.createdAt,startedAt:this.startedAt,endedAt:this.endedAt,elapsedMs:this.startedAt?(this.endedAt?Date.parse(this.endedAt)-Date.parse(this.startedAt):Date.now()-Date.parse(this.startedAt)):0,engineWorkMs:this.engineWorkMs,world,worldRevision:String(world.revision),physicalActions:world.turn-this.initial.turn,decisionSteps:this.decisionSteps,requests:this.ledger.requests,externalRequests:this.ledger.externalRequests,questions:this.ledger.questions,...detail,outcome:this.holder?.lastResult??null,interventions:this.editLog,lineage:this.lineage,readOnly:false});}
+  private publish(){const state=this.view();state.lastSeq=this.seq+1;this.emit('state',state);}
+  private clearTimer(){if(this.timer!==undefined)clearTimeout(this.timer);this.timer=undefined;}
+  private initialize(){if(this.holder)return;this.startedAt=now();this.startedClock=performance.now();
+@@ -95,13 +95,13 @@
+   });return structuredClone({...result,replayed});
+  }
+  getCheckpoint(checkpointId:string){const cp=this.checkpoints.get(checkpointId);if(!cp)return fail('CHECKPOINT_NOT_FOUND','Unknown checkpoint',404);return structuredClone(cp);}
+- export(){return {schema:'gs/lab-export/v1',version:'0.4.1',state:this.view(),initial:structuredClone(this.initial),config:structuredClone(this.config),lineage:structuredClone(this.lineage),controls:this.events.filter(e=>e.type==='command'||e.type==='control_transferred'),events:structuredClone(this.events),checkpoints:[...this.checkpoints.values()].map(c=>structuredClone(c)),script:structuredClone(this.script),ledger:structuredClone(this.ledger),trace:this.holder?.export()??null,evaluation:{live:this.config.backend!=='rule'||this.config.generator==='llm'?'REQUESTED':'NOT_RUN',hasInterventions:this.editLog.length>0,interactiveControl:this.events.some(e=>e.type==='control_transferred')||this.editLog.some((x:any)=>x.origin!=='config'),deadlineIncludesOperatorPauses:true,note:'Host clocks include pauses after first step. UI replay speed never delays execution. External Agent controls experiments, not action choices.'}};}
++ export(){return {schema:'gs/lab-export/v1',version:'0.4.2',state:this.view(),initial:structuredClone(this.initial),config:structuredClone(this.config),lineage:structuredClone(this.lineage),controls:this.events.filter(e=>e.type==='command'||e.type==='control_transferred'),events:structuredClone(this.events),checkpoints:[...this.checkpoints.values()].map(c=>structuredClone(c)),script:structuredClone(this.script),ledger:structuredClone(this.ledger),trace:this.holder?.export()??null,evaluation:{live:this.config.backend!=='rule'||this.config.generator==='llm'?'REQUESTED':'NOT_RUN',hasInterventions:this.editLog.length>0,interactiveControl:this.events.some(e=>e.type==='control_transferred')||this.editLog.some((x:any)=>x.origin!=='config'),deadlineIncludesOperatorPauses:true,note:'Host clocks include pauses after first step. UI replay speed never delays execution. External Agent controls experiments, not action choices.'}};}
+  shutdown(){if(!this.terminal)this.requestStop('cancelled','service_shutdown');}
+ }
+ export class ExperimentManager{
+  readonly runs=new Map<string,LabRun>();private createRequests=new Map<string,{signature:string;promise:Promise<LabView>}>();private forks=new Map<string,{signature:string;promise:Promise<LabView>}>();
+  constructor(readonly providers?:ProviderFactory,readonly maxRuns=32){}
+- capabilities(){return {schema:'gs/lab-capabilities/v1',version:'0.4.1',kinds:['judgment','game'],tasks:TASKS,scenarios:['meadow','detour','guarded','remix'],controllers:['hierarchy','program','rules'],strategies:['direct','batch','serial','dependent'],backends:{rule:{ready:true},jev:{ready:this.providers?.ready('jev')??false},llm:{ready:this.providers?.ready('llm')??false}},commands:['start','step','pause','cancel','takeover','intervene','schedule','checkpoint'],limits:{maxRuns:this.maxRuns,maxRequests:512,maxQuestions:8192,maxActions:180,maxSteps:1000,maxSearchNodes:500000,deadlineMs:3600000},defaults:parseConfig({}),semantics:{pause:'between decision quanta; not a rollback',cancel:'cooperative; unknown outcomes are not retried',fork:'new trial, never transparent continuation',clock:'wall clock starts at first step; includes operator pause',auth:'one trusted local-user token; actor IDs are provenance/coordination, not separate security principals',persistence:'live state in process; completed exports may be archived by host; no active crash recovery'}};}
++ capabilities(){return {schema:'gs/lab-capabilities/v1',version:'0.4.2',kinds:['judgment','game'],tasks:TASKS,scenarios:['meadow','detour','guarded','remix'],controllers:['hierarchy','program','rules'],strategies:['direct','batch','serial','dependent'],backends:{rule:{ready:true},jev:{ready:this.providers?.ready('jev')??false},llm:{ready:this.providers?.ready('llm')??false}},commands:['start','step','pause','cancel','takeover','intervene','schedule','checkpoint'],limits:{maxRuns:this.maxRuns,maxRequests:512,maxQuestions:8192,maxActions:180,maxSteps:1000,maxSearchNodes:500000,deadlineMs:3600000},defaults:parseConfig({}),semantics:{pause:'between decision quanta; not a rollback',cancel:'cooperative; unknown outcomes are not retried',fork:'new trial, never transparent continuation',clock:'wall clock starts at first step; includes operator pause',recovery:'0.4.2: contextual child decisions; abstention blocks without regenerating; structure-level repair dedup; executionFeedback separate from validationFeedback',auth:'one trusted local-user token; actor IDs are provenance/coordination, not separate security principals',persistence:'live state in process; completed exports may be archived by host; no active crash recovery'}};}
+  get(runId:string){const run=this.runs.get(identifier(runId,'runId'));if(!run)return fail('RUN_NOT_FOUND','Run not in this service process',404);return run;}
+  async create(raw:unknown):Promise<LabView>{if(!raw||typeof raw!=='object'||Array.isArray(raw))return fail('INVALID_OBJECT');const r=raw as Record<string,unknown>;if(Object.keys(r).some(k=>!['requestId','config','actor'].includes(k)))fail('UNKNOWN_FIELD');const key=identifier(r.requestId,'requestId');const c=parseConfig(r.config),actor=parseActor(r.actor);return equalRequest(this.createRequests,key,stable({c,actor}),async()=>this.insert(c,actor).view());}
+  private insert(c:LabConfig,actor:Actor,initial?:GameState,seed?:MemorySeed,lineage?:unknown){if(this.runs.size>=this.maxRuns)fail('RUN_CAPACITY','Export then restart service; active runs are never silently evicted',429);if(c.backend!=='rule'&&!this.providers?.ready(c.backend))fail('PROVIDER_NOT_CONFIGURED',`${c.backend} is not configured`,503);if(c.generator==='llm'&&(!this.providers?.ready('llm')||!this.providers.generate))fail('PROVIDER_NOT_CONFIGURED','Generator not configured',503);const run=new LabRun(c,actor,this.providers,initial,seed,lineage);this.runs.set(run.runId,run);return run;}
+--- a/src/lab/session.ts
++++ b/src/lab/session.ts
+@@ -16,7 +16,7 @@
+ export type RequestLedger={requests:number;externalRequests:number;questions:number;rows:{source:string;kind:string;questions:number;latencyMs:number;status:string;model?:string;usage:unknown;error?:string}[]};
+ export interface HostedSession{
+  world:GameWorld;step():Promise<StepResult>;cancel():void;edit(tool:EditTool,point:Point):{ok:boolean;message:string};
+- finished:boolean;lastResult:StepResult|undefined;inspect():{lastDecision:unknown;activeSkill:unknown;lastSkillResult:unknown};export():unknown;memory():MemorySeed;
++ finished:boolean;lastResult:StepResult|undefined;inspect():{lastDecision:unknown;activeSkill:unknown;lastSkillResult:unknown;diagnostics?:unknown};export():unknown;memory():MemorySeed;
+ }
+ function storageSeed(seed:MemorySeed){const data=new Map<string,string>();if(seed.catalogue)data.set('tuanzi.gs.reactive.v3',JSON.stringify(seed.catalogue));if(seed.experience)data.set('tuanzi.gs.experience.v3',JSON.stringify(seed.experience));if(seed.book)data.set('tuanzi-gs.skills.v2',JSON.stringify(seed.book));return {getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>{data.set(k,v);},removeItem:(k:string)=>{data.delete(k);}};}
+ export function createHosted(config:LabConfig,initial:GameState,notify:(e:EngineEvent)=>void,ledger:RequestLedger,signal:AbortSignal,providers?:ProviderFactory,seed:MemorySeed={}):HostedSession{
+@@ -53,5 +53,5 @@
+  const s=new SkillSession(initial,mode,notify,{orderSeed:config.orderSeed,catalogue,experience,decision:{strategy:config.strategy,backend,timeoutMs:Math.min(25000,config.deadlineMs),maxRequests:config.maxRequests,maxQuestions:config.maxQuestions},
+   limits:{actions:config.maxActions,cycles:config.maxSteps*2,searchNodes:config.maxSearchNodes,providerCalls:config.maxRequests,durationMs:config.deadlineMs},...(config.generator==='llm'?{providers:{identity:'hosted-llm-generator',generate}}:{})});
+  return {world:s.world,step:()=>s.step(),cancel:()=>s.cancel(),edit:(t,p)=>s.edit(t,p),get finished(){return s.finished;},get lastResult(){return s.lastResult;},
+-  inspect:()=>({lastDecision:s.decisions.at(-1)??null,activeSkill:s.active?{runId:s.active.runId,spec:s.active.spec,binding:s.active.call.binding,phase:s.active.domain.frame.phase}:null,lastSkillResult:s.summaries.at(-1)??null}),export:()=>s.export(),memory:()=>({catalogue:catalogue.export(),experience:experience.export()})};
++  inspect:()=>({lastDecision:s.decisions.at(-1)??null,activeSkill:s.active?{runId:s.active.runId,spec:s.active.spec,binding:s.active.call.binding,phase:s.active.domain.frame.phase}:null,lastSkillResult:s.summaries.at(-1)??null,diagnostics:s.diagnostics()}),export:()=>s.export(),memory:()=>({catalogue:catalogue.export(),experience:experience.export()})};
+ }
+--- a/src/lab/types.ts
++++ b/src/lab/types.ts
+@@ -8,7 +8,7 @@
+ export type Intervention={afterAction:number;tool:Exclude<EditTool,'inspect'>;point:Point};
+ export type LabConfig={kind:'judgment'|'game';task:TaskId;scenario:'meadow'|'detour'|'guarded'|'remix';controller:'hierarchy'|'program'|'rules';strategy:Strategy;backend:'rule'|'jev'|'llm';generator:'local'|'llm';experience:ExperienceMode;orderSeed:number;maskResources:boolean;delayMs:number;allowLive:boolean;maxRequests:number;maxQuestions:number;maxActions:number;maxSteps:number;maxSearchNodes:number;deadlineMs:number;interventions:Intervention[]};
+ export type LabEvent={runId:string;seq:number;at:string;type:string;data:unknown};
+-export type LabView={schema:'gs/lab-state/v1';version:'0.4.1';runId:string;viewerPath:string;config:LabConfig;status:RunStatus;reason:string|null;owner:Actor;controlVersion:number;lastSeq:number;busy:boolean;createdAt:string;startedAt:string|null;endedAt:string|null;elapsedMs:number;engineWorkMs:number;world:GameState;worldRevision:string;physicalActions:number;decisionSteps:number;requests:number;externalRequests:number;questions:number;lastDecision:unknown;activeSkill:unknown;lastSkillResult:unknown;outcome:unknown;interventions:unknown[];lineage:unknown;readOnly:boolean};
++export type LabView={schema:'gs/lab-state/v1';version:'0.4.2';runId:string;viewerPath:string;config:LabConfig;status:RunStatus;reason:string|null;owner:Actor;controlVersion:number;lastSeq:number;busy:boolean;createdAt:string;startedAt:string|null;endedAt:string|null;elapsedMs:number;engineWorkMs:number;world:GameState;worldRevision:string;physicalActions:number;decisionSteps:number;requests:number;externalRequests:number;questions:number;lastDecision:unknown;activeSkill:unknown;lastSkillResult:unknown;diagnostics?:unknown;outcome:unknown;interventions:unknown[];lineage:unknown;readOnly:boolean};
+ export type Command={commandId:string;expectedControlVersion:number;actor:Actor;action:'start'|'step'|'pause'|'cancel'|'takeover'|'intervene'|'schedule'|'checkpoint';tool?:Exclude<EditTool,'inspect'>;point?:Point;expectedWorldRevision?:string;afterAction?:number;label?:string};
+ export type CommandResult={commandId:string;accepted:true;replayed:boolean;state:LabView;checkpointId?:string};
+ export const TERMINAL=new Set<RunStatus>(['succeeded','failed','blocked','cancelled','stopped','fault']);
+--- a/src/lab/viewer.ts
++++ b/src/lab/viewer.ts
+@@ -6,34 +6,34 @@
+ function uid(){if(typeof crypto.randomUUID==='function')return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]!&15)|64;b[8]=(b[8]!&63)|128;const h=[...b].map(x=>x.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
+ const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
+ const esc=(x:unknown)=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+-const labels:Record<string,string>={ready:'就绪',running:'运行中',stepping:'单步推进',pausing:'等待决策边界',paused:'已暂停',cancelling:'取消中',succeeded:'任务完成',failed:'任务失败',blocked:'引擎暂停',cancelled:'已取消',stopped:'达到边界',fault:'运行故障'};
++const labels:Record<string,string>={ready:'就绪',running:'运行中',stepping:'单步推进',pausing:'等待决策边界',paused:'已暂停',cancelling:'取消中',succeeded:'任务完成',failed:'任务失败',blocked:'决策受阻',cancelled:'已取消',stopped:'已停止',fault:'运行故障'};
+ const terminal=(s:string)=>['succeeded','failed','blocked','cancelled','stopped','fault'].includes(s);
+ let actorId:string;try{actorId=sessionStorage.getItem('gs-lab-viewer-id')??`human:${uid()}`;sessionStorage.setItem('gs-lab-viewer-id',actorId);}catch{actorId=`human:${Date.now()}`;}
+ const actor:Actor={id:actorId,kind:'human',label:'网页操作员'};
+ let token='',state:LabView|null=null,cap:any,events:LabEvent[]=[],cursor=0,streamAbort:AbortController|null=null,connectGeneration=0,replaying=false,frames:GameState[]=[],imported=false,selectedTab='events';
+ document.getElementById('lab-app')!.innerHTML=`
+-<header><div class="brand"><div class="mark">g/s</div><div><div class="brand-name">TUANZI LAB</div><div class="subbrand">AGENT CONTROL · HUMAN OBSERVATION / 0.4.1</div></div></div><div class="header-right"><a class="legacy-link" href="/">本地试玩 ↗</a><span class="pill"><i id="connection-dot" class="dot off"></i><span id="connection">连接服务</span></span></div></header>
++<header><div class="brand"><div class="mark">g/s</div><div><div class="brand-name">TUANZI LAB</div><div class="subbrand">AGENT CONTROL · HUMAN OBSERVATION / 0.4.2</div></div></div><div class="header-right"><a class="legacy-link" href="/">本地试玩 ↗</a><span class="pill"><i id="connection-dot" class="dot off"></i><span id="connection">连接服务</span></span></div></header>
+ <div class="layout">
+ <aside class="sidebar"><section class="panel"><div class="row"><h2>实验会话</h2><button id="refresh" class="small">刷新</button></div><p class="hint">CLI 和网页共享同一个 runId。</p><div id="run-list" class="runs"><p class="empty-note">读取实验列表…</p></div></section>
+ <section class="panel"><div class="eyebrow">CREATE A RUN</div><h2>新建实验</h2><form id="create-form"><label for="kind">实验范围</label><select id="kind"><option value="judgment">判断组合实验</option><option value="game">主游戏 · G/S 技能</option></select><div id="task-field"><label for="task">固定任务</label><select id="task"><option value="energy">为下一程补能</option><option value="fast">尽快交付</option><option value="reserve">交付并保留两颗</option><option value="chain">采集—返家—交付</option></select></div><div id="game-fields" class="hidden"><label for="scenario">地图</label><select id="scenario"><option value="guarded">守卫果园</option><option value="meadow">日常采集</option><option value="detour">近路被堵</option><option value="remix">镜像布局</option></select><label for="controller">参考实现</label><select id="controller"><option value="hierarchy">父子 G/S</option><option value="program">完整序列搜索</option><option value="rules">完整预置规则</option></select></div><label for="strategy">判断组织</label><select id="strategy"><option value="batch">独立拆分 · 合批</option><option value="direct">直接 Choice</option><option value="serial">独立拆分 · 逐题</option><option value="dependent">适用性 → 再选择</option></select><label for="backend">判断来源</label><select id="backend"><option value="rule">程序化参考</option><option value="jev">Jev · 真实请求</option><option value="llm">LLM · 真实请求</option></select><details><summary>预算与实验条件</summary><div class="config-grid"><div><label for="seed">顺序种子</label><input id="seed" type="number" min="0" value="441"></div><div><label for="delay">模拟延迟 ms</label><input id="delay" type="number" min="0" max="1000" value="0"></div><div><label for="requests">请求上限</label><input id="requests" type="number" min="1" max="512" value="512"></div><div><label for="deadline">整局截止 ms</label><input id="deadline" type="number" min="1" value="120000"></div></div><label class="checkbox"><input id="mask" type="checkbox">起初隐藏资源字段</label><label class="checkbox"><input id="allow-live" type="checkbox">明确允许本次真实模型请求</label><p class="hint">从首次单步开始计时；人工暂停也占用墙钟期限。观看速度不改变实验速度。</p></details><button class="primary full" type="submit" id="create">创建会话</button></form><label class="import">离线查看导出报告<input type="file" id="import" accept=".json,application/json"></label></section></aside>
+-<main class="main-stage"><div class="stage-head"><div class="eyebrow">ONE RUN. ONE AUTHORITATIVE WORLD.</div><div class="row"><h1 id="title">实验由 Agent 操作。过程在人眼前。</h1><span class="pill" id="run-status">未选择实验</span></div><p id="run-id">从左侧选择会话，或在终端创建一场实验。</p><div class="tags" id="run-tags"><span class="pill">HTTP / CLI 控制</span><span class="pill">SSE 事件同步</span><span class="pill">不复制游戏实例</span></div></div>
++<main class="main-stage"><div class="stage-head"><div class="eyebrow">ONE RUN. ONE AUTHORITATIVE WORLD.</div><div class="row"><h1 id="title">实验由 Agent 操作。过程在人眼前。</h1><span class="pill" id="run-status">未选择实验</span></div><p id="run-id">从左侧选择会话，或在终端创建一场实验。</p><div class="notice hidden" id="stop-detail" role="status"></div><div class="tags" id="run-tags"><span class="pill">HTTP / CLI 控制</span><span class="pill">SSE 事件同步</span><span class="pill">不复制游戏实例</span></div></div>
+ <div class="toolbar"><button id="takeover">接管并暂停</button><button id="step">单步</button><button id="start" class="primary">开始运行</button><button id="pause">暂停</button><button id="cancel" class="danger">取消</button><button id="replay">回放</button><button id="export">导出 JSON</button></div>
+ <div id="replay-bar" class="replay-bar hidden"><span>只读回放</span><input id="replay-slider" type="range" min="0" max="0" value="0" aria-label="回放进度"><span id="replay-position">0 / 0</span><button id="live" class="small">返回实时</button></div>
+ <div class="scene"><canvas id="world" aria-label="服务端实验世界，实时快照"></canvas><div class="scene-overlay" id="empty-world"><h2>让 Agent 主持实验</h2><p>在终端创建会话，网页即可同步看到实际状态、判断与结果。关闭页面不会停止服务端实验。</p><pre class="code">node bin/gs-lab.mjs create --task energy</pre></div><div class="scene-footer"><span id="world-label">等待权威快照</span><span id="sequence-label">事件序号 —</span></div></div>
+ <div class="stats"><div class="stat"><div class="value" id="actions">—</div><div class="label">实际物理动作</div></div><div class="stat"><div class="value" id="request-count">—</div><div class="label">判断 / 生成请求</div></div><div class="stat"><div class="value" id="questions">—</div><div class="label">独立判断问题</div></div><div class="stat"><div class="value" id="external">—</div><div class="label">真实外部请求尝试</div></div></div>
+-<section class="panel"><div class="tabs"><button data-tab="events">事件时间线</button><button data-tab="decision">判断证据</button><button data-tab="skill">父子技能</button><button data-tab="config">实验配置</button></div><div id="activity" class="activity"></div><pre id="detail-json" class="code hidden"></pre></section></main>
++<section class="panel"><div class="tabs"><button data-tab="events">事件时间线</button><button data-tab="decision">判断证据</button><button data-tab="skill">父子技能</button><button data-tab="config">实验配置</button><button data-tab="recovery">修复诊断</button></div><div id="activity" class="activity"></div><pre id="detail-json" class="code hidden"></pre></section></main>
+ <aside class="details"><section class="panel"><div class="eyebrow">CONTROL & PROVENANCE</div><h2>当前控制者</h2><div id="owner" class="owner-box">未选择会话<span><br>网页默认只观察，接管会留痕。</span></div><div id="runtime" style="margin-top:12px"></div><div id="result-note" class="notice hidden"></div></section>
+ <section class="panel"><div class="eyebrow">REPRODUCIBLE EXPERIMENTS</div><h2>检查点与分支</h2><p class="hint">分支是新试验：控制器阶段和预算重新开始，原实验保持不变。</p><button id="checkpoint" class="full">保存当前检查点</button><label for="checkpoint-list">分支起点</label><select id="checkpoint-list"><option value="initial">初始局面</option></select><label class="checkbox"><input id="inherit" type="checkbox">继承已有技能 / 经验（非独立样本）</label><button id="fork" class="full">从此处创建新实验</button></section>
+ <section class="panel wide"><div class="eyebrow">RECORDED INTERVENTIONS</div><h2>受控环境干预</h2><p class="hint">只能在暂停边界编辑世界，不能强制团子的下一步动作，也不能改验收条件。</p><select id="tool"><option value="wall">增加障碍</option><option value="berry">移动 / 添加浆果</option><option value="guard">移动守卫</option><option value="erase">擦除对象</option></select><div class="config-grid"><div><label for="point-x">X / 0–16</label><input id="point-x" type="number" min="0" max="16" value="3"></div><div><label for="point-y">Y / 0–10</label><input id="point-y" type="number" min="0" max="10" value="8"></div></div><button id="edit" class="full">记录并应用干预</button><p class="hint">正式基准可通过配置 interventions 或 CLI schedule 预设脚本。</p></section></aside></div>
+-<footer class="footer">G/S LAB 0.4.1 · 外部 Agent 是实验员，被测引擎才是决策者。<br>本地可信单用户服务。状态由服务端持有；所有模型请求须显式授权。离线结果不代表模型性能。</footer><div id="toast" class="hidden" role="status"></div>`;
++<footer class="footer">G/S LAB 0.4.2 · 外部 Agent 是实验员，被测引擎才是决策者。<br>本地可信单用户服务。状态由服务端持有；所有模型请求须显式授权。离线结果不代表模型性能。</footer><div id="toast" class="hidden" role="status"></div>`;
+ const renderer=new WorldRenderer($<HTMLCanvasElement>('world'));renderer.setState(createWorld('guarded'),true);
+ const val=(id:string)=>$<HTMLInputElement>(id).value;
+ const check=(id:string)=>$<HTMLInputElement>(id).checked;
+ let toastTimer:ReturnType<typeof setTimeout>;function toast(s:string){$('toast').textContent=s;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),6500);}
+ async function api(path:string,body?:unknown){const res=await fetch(path,{method:body?'POST':'GET',headers:{'x-gs-token':token,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const out=await res.json();if(!res.ok)throw Error(`${out.error?.code??res.status}: ${out.error?.message??out.error}`);return out;}
+ function path(id=state?.runId){return `/api/lab/runs/${id}`;}
+-function render(){if(!state)return;$('empty-world').classList.add('hidden');const c=state.config;$('title').textContent=c.kind==='game'?({'guarded':'守卫果园','meadow':'日常采集','detour':'近路被堵','remix':'镜像布局'}[c.scenario]):(cap?.tasks?.[c.task]?.title??c.task);$('run-status').textContent=(imported?'归档 · ':'')+(labels[state.status]??state.status);$('run-id').textContent=state.runId;
+- $('run-tags').innerHTML=[c.kind==='game'?`主游戏 / ${c.controller}`:'判断组合',c.strategy,c.backend==='rule'?'程序化参考':`${c.backend} / 真实请求`,c.backend==='rule'&&c.generator==='local'?'模型 NOT_RUN':'已授权模型',replaying?'只读回放':'实时快照'].map(x=>`<span class="pill">${esc(x)}</span>`).join('');
++function render(){if(!state)return;$('empty-world').classList.add('hidden');const c=state.config;const testing=(state.lastDecision as any)?.source==='test-provider';$('title').textContent=c.kind==='game'?({'guarded':'守卫果园','meadow':'日常采集','detour':'近路被堵','remix':'镜像布局'}[c.scenario]):(cap?.tasks?.[c.task]?.title??c.task);$('run-status').textContent=(imported?'归档 · ':'')+(labels[state.status]??state.status);$('run-id').textContent=state.runId;
++ $('run-tags').innerHTML=[c.kind==='game'?`主游戏 / ${c.controller}`:'判断组合',c.strategy,testing?'测试替身 · 非真实模型':c.backend==='rule'?'程序化参考':`${c.backend} / 真实请求`,testing?'离线协议验证':c.backend==='rule'&&c.generator==='local'?'模型 NOT_RUN':'已授权模型',replaying?'只读回放':'实时快照'].map(x=>`<span class="pill">${esc(x)}</span>`).join('');
+  if(!replaying)renderer.setState(state.world);$('world-label').textContent=`物理回合 ${state.world.turn} · 能量 ${state.world.energy} · 交付 ${state.world.delivered}/5 · 背包 ${state.world.bag}`;$('sequence-label').textContent=`seq ${state.lastSeq} / rev ${state.worldRevision}`;
+  $('actions').textContent=String(state.physicalActions);$('request-count').textContent=String(state.requests);$('questions').textContent=String(state.questions);$('external').textContent=String(state.externalRequests);
+  const own=state.owner.id===actor.id,done=terminal(state.status),quiet=!state.busy&&!['running','pausing','cancelling','stepping'].includes(state.status),writable=own&&!done&&!imported&&!replaying;
+@@ -41,11 +41,13 @@
+  for(const id of ['start','step','edit','checkpoint'])$<HTMLButtonElement>(id).disabled=!writable||!quiet;
+  $<HTMLButtonElement>('pause').disabled=!writable||quiet;$<HTMLButtonElement>('cancel').disabled=!writable;$<HTMLButtonElement>('takeover').disabled=own||done||imported||replaying;
+  $<HTMLButtonElement>('fork').disabled=imported;$<HTMLButtonElement>('replay').disabled=false;$<HTMLButtonElement>('export').disabled=false;
+- const metrics=[['控制版本',state.controlVersion],['父层决策量子',state.decisionSteps],['整局墙钟',`${Math.round(state.elapsedMs)} ms`],['引擎推进耗时',`${Math.round(state.engineWorkMs)} ms`],['请求上限',c.maxRequests],['截止',`${c.deadlineMs} ms`],['干预记录',state.interventions.length],['执行归属','服务端唯一实例']];$('runtime').innerHTML=metrics.map(([k,v])=>`<div class="metric-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
++ const diag=state.diagnostics as any;const repairs=diag?.budgets?.repairs;const latest=diag?.latestFailure;
++ $('stop-detail').classList.toggle('hidden',!state.reason);$('stop-detail').textContent=state.reason?`原因：${state.reason}${latest?' · 最近阻塞：'+latest.reason+' · 子技能实际步数：'+latest.outcome.steps:''}。不会自动改选规则答案或重复生成；可导出诊断或从检查点创建新试验。`:'';
++ const metrics=[['控制版本',state.controlVersion],['父层决策量子',state.decisionSteps],['整局墙钟',`${Math.round(state.elapsedMs)} ms`],['引擎推进耗时',`${Math.round(state.engineWorkMs)} ms`],['修复次数 / 上限',repairs?`${repairs.used} / ${repairs.limit}`:'不适用'],['物理动作 / 上限',`${state.physicalActions} / ${c.maxActions}`],['请求 / 上限',`${state.requests} / ${c.maxRequests}`],['问题组织',c.strategy],['请求调度',c.strategy==='serial'?'serial':'batch（direct 可仅一题）'],['截止',`${c.deadlineMs} ms`],['干预记录',state.interventions.length],['执行归属','服务端唯一实例']];$('runtime').innerHTML=metrics.map(([k,v])=>`<div class="metric-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+  $('result-note').classList.toggle('hidden',!state.reason&&!done);$('result-note').textContent=state.reason??(state.status==='succeeded'?'根验收器确认任务完成。局部技能成功不等于整局成功。':'');renderDetail();if(replaying)replayFrame();}
+ const eventName:Record<string,string>={state:'世界状态更新',run_created:'会话创建',command:'控制命令',control_transferred:'控制权转移',intervention:'环境干预',intervention_scheduled:'计划干预',run_ended:'实验结束',checkpoint_created:'保存检查点',engine:'引擎事件'};
+ function renderDetail(){if(selectedTab==='events'){$('activity').classList.remove('hidden');$('detail-json').classList.add('hidden');$('activity').innerHTML=events.filter(e=>e.type!=='state').slice(-70).reverse().map(e=>{const d=e.data as any;return `<div class="activity-item"><small>#${e.seq}</small><div><b>${esc(e.type==='engine'?d?.event?.type:eventName[e.type]??e.type)}</b><p>${esc(e.type==='command'?`${d.actor?.label??d.actor?.id} · ${d.action}`:e.type==='engine'?d?.sourceRunId??'':e.at?.slice(11,19))}</p></div></div>`;}).join('')||'<p class="empty-note">等待事件。关闭页面不停止实验。</p>';}
+- else{$('activity').classList.add('hidden');$('detail-json').classList.remove('hidden');$('detail-json').textContent=JSON.stringify(selectedTab==='decision'?state?.lastDecision:selectedTab==='skill'?{active:state?.activeSkill,lastResult:state?.lastSkillResult}:state?.config,null,2);}}
++ else{$('activity').classList.add('hidden');$('detail-json').classList.remove('hidden');$('detail-json').textContent=JSON.stringify(selectedTab==='decision'?state?.lastDecision:selectedTab==='skill'?{active:state?.activeSkill,lastResult:state?.lastSkillResult}:selectedTab==='recovery'?state?.diagnostics??{note:'该控制器无技能恢复日志'}:{...state?.config,taskSemantics:state?.config.kind==='game'?'task 字段仅兼容旧配置；此局根目标为实际主游戏 GOAL，不使用 energy 夹具。':'task 为判断实验的固定验收契约'},null,2);}}
+ async function refreshRuns(){if(!token)return;const list=await api('/api/lab/runs');$('run-list').innerHTML=list.runs.slice().reverse().map((r:any)=>`<button class="run-link ${state?.runId===r.runId?'active':''}" data-run="${esc(r.runId)}"><strong>${esc(r.config.kind==='game'?r.config.scenario:r.config.task)} · ${esc(r.config.strategy)}</strong><small>${esc(labels[r.status])} / ${esc(r.owner.label||r.owner.id)}</small><small>${esc(r.runId.slice(0,17))}…</small></button>`).join('')||'<p class="empty-note">还没有会话。<br>从 CLI 或下方创建。</p>';for(const b of document.querySelectorAll<HTMLButtonElement>('[data-run]'))b.onclick=()=>void openRun(b.dataset.run!).catch(e=>toast(e.message));}
+ async function openRun(id:string){imported=false;replaying=false;$('replay-bar').classList.add('hidden');const g=++connectGeneration;streamAbort?.abort();const next=await api(path(id));if(g!==connectGeneration)return;state=next;cursor=state!.lastSeq;const old=await api(`${path(id)}/events?after=0&limit=100`);if(g!==connectGeneration)return;events=old.events;history.replaceState(null,'',`/lab?run=${id}`);render();void refreshRuns();void refreshCheckpoints();streamAbort=new AbortController();void stream(id,g,streamAbort.signal);}
+ async function stream(id:string,g:number,signal:AbortSignal){while(!signal.aborted&&g===connectGeneration){try{const response=await fetch(`${path(id)}/stream?after=${cursor}`,{headers:{'x-gs-token':token},signal});if(!response.ok)throw Error('事件流连接失败');$('connection').textContent='事件流已连接';$('connection-dot').classList.remove('off');const reader=response.body!.getReader(),decode=new TextDecoder();let text='';while(!signal.aborted){const r=await reader.read();if(r.done)break;text+=decode.decode(r.value,{stream:true});let i;while((i=text.indexOf('\n\n'))>=0){const piece=text.slice(0,i);text=text.slice(i+2);const data=piece.split('\n').filter(l=>l.startsWith('data: ')).map(l=>l.slice(6)).join('\n');if(!data)continue;const e=JSON.parse(data) as LabEvent;if(g!==connectGeneration||signal.aborted)return;if(e.seq<=cursor)continue;cursor=e.seq;events.push(e);events=events.slice(-1000);if(e.type==='state'){state=e.data as LabView;render();if(terminal(state.status))void refreshRuns();}else renderDetail();}}}
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -361,7 +361,7 @@
+   const r=session.lastResult;if(!r||!session.finished)return;
+   const s=session.world.snapshot();const success=r.kind==='done'&&r.outcome==='succeeded';
+   const title=success?'五颗浆果，平安到家。':r.kind==='done'?(s.energy<=0?'团子的能量用完了。':'本局行动预算用完了。'):'当前运行已停下。';
+-  const reasons:Record<string,string>={planner_proposed_no_change:'现有策略库没有可用的新方案。你可以修改世界，或恢复快照重新实验。',repair_budget_exhausted:'策略修复预算已经用完，没有继续调用模型。',cycle_budget_exhausted:'达到决策周期上限。'};
++  const reasons:Record<string,string>={'decision_blocked:no_local_suitable_action':'子层判断受阻：没有选择合适动作。任务上下文和弃权结果已记录；未自动改选规则或重复生成。','decision_blocked:parent_no_suitable_skill':'父层判断受阻：已有候选被拒绝，未证明需要新技能。','duplicate_repair_no_new_evidence':'检测到同样条件下的重复技能结构；仅更换名字不会重试。',planner_proposed_no_change:'现有策略库没有可用的新方案。你可以修改世界，或恢复快照重新实验。',repair_budget_exhausted:'策略修复预算已经用完，没有继续调用模型。',cycle_budget_exhausted:'达到决策周期上限。'};
+   const reason='reason'in r?r.reason:'';
+   const detail=success?`经过 ${s.turn} 个动作，交付 ${s.delivered} 颗浆果，剩余 ${s.energy} 点能量。`:
+     r.kind==='done'?(s.energy<=0?'食物既是任务物品，也是生存资源。换一个起点，再试一次。':'在 180 个动作内未完成交付。查看轨迹，或从不同策略重新开始。'):reasons[reason]??`运行时原因：${reason}。没有静默切换成规则或继续执行。`;
+--- /dev/null
++++ b/src/skills/context.ts
+@@ -0,0 +1,45 @@
++/** Registry-owned semantics. No model-authored verdict or recommended action is injected. */
++import type {Json} from '../../vendor/gs-engine-ts/src/types.js';
++import type {GameState} from '../game/types.js';
++import {GOAL,same} from '../game/types.js';
++import {path} from '../game/world.js';
++import type {SkillSpec} from './spec.js';
++import type {Frame} from './behavior.js';
++export const TASK_CONTEXT_VERSION='gs/skill-task-context/v042';
++export const LOCAL_GOALS = {
++ 'access-open':'让绑定的浆果区域出现安全采集机会：足够的目标浆果可达，且目标守卫已在进食或已不存在。此技能不负责完成全部交付。',
++ 'acquired-one':'实际拾取绑定的一颗浆果；向目标走近是允许的中间步骤。',
++ 'deposited':'返回小窝并实际交付绑定数量的浆果；向家移动是允许的中间步骤。',
++ 'energy-restored':'食用一颗现有浆果，实际能量高于技能起点；不能通过改目标宣告成功。'
++} as const;
++export function localGoalText(spec:SkillSpec){return LOCAL_GOALS[spec.success];}
++export function skillTaskContext(spec:SkillSpec,f:Frame,s:GameState):Json {
++ const phase=spec.phases[f.phase];
++ const target=phase?.rule==='place-resource'?f.placement?.stand:
++   phase?.rule==='gather'?s.berries.find(b=>b.id===f.binding.targetId):
++   phase?.rule==='deliver'?s.home:undefined;
++ const targetRole=phase?.rule==='place-resource'?'resource-placement-stand':phase?.rule==='gather'?'bound-berry':phase?.rule==='deliver'?'home':null;
++ const atTarget=target?same(s.player,target):null;
++ const knownDistance=target?(path(s,s.player,target)?.length??null):null;
++ const immediate=phase?.rule==='place-resource'
++  ? (!f.placement?'尚无有效投放站位；不要把缺少绑定误作已能投放。':atTarget?'已到投放站位；判断允许的资源投放动作。':'先安全接近已经绑定的投放站位。投放动作只在到达站位后出现；本步不需要立即打开采集区域。')
++  :phase?.rule==='gather'?(atTarget?'已到目标浆果，判断拾取动作。':'安全接近绑定浆果；目标仍需在随后拾取。')
++  :phase?.rule==='deliver'?(atTarget?'已回到小窝，判断交付动作。':'先安全返回小窝；本步移动不需要立即增加交付数量。')
++  :phase?.rule==='consume'?'判断是否食用现有浆果来完成局部能量恢复。'
++  :phase?.rule==='wait-access'?'观察已放置资源产生的守卫位置和进食状态变化；可以等待，在受威胁时允许安全调整。'
++  :'当前阶段已结束，交还局部验收与调度。';
++ return {
++  schema:TASK_CONTEXT_VERSION,provenance:'registered-contract+current-SkillRun-binding; not a rule-score or oracle answer',
++  rootGoal:{id:GOAL.id,description:GOAL.description},
++  localGoal:{id:spec.success,description:localGoalText(spec)},
++  phase:{index:f.phase,total:spec.phases.length,rule:phase?.rule??'done',until:phase?.until??'local-success',maxSteps:phase?.maxSteps??0,stepsUsed:s.turn-f.phaseStart},
++  immediateObjective:{description:immediate,targetRole,target:target?{x:target.x,y:target.y}:null,atTarget,pathSteps:knownDistance},
++  stepCriterion:'选择推进当前阶段、满足给定安全与资源约束的合法候选。允许移动或等待等中间步骤；不要求一次动作完成局部或根目标。证据仍不足或没有合适动作时保留 none，不发明候选。',
++  relations:{player:s.player,binding:f.binding,placement:f.placement,
++   targetGuard:s.guards.find(g=>g.id===f.binding.targetId)??null,
++   resourcePlaced:f.placed>0||s.lures.length>0,
++   dropAvailableOnlyFromBoundStand:phase?.rule==='place-resource'},
++  remaining:{skillSteps:Math.max(0,spec.maxSteps-(s.turn-f.initial.turn)),phaseSteps:Math.max(0,(phase?.maxSteps??0)-(s.turn-f.phaseStart))},
++  snapshotRevision:String(s.revision)
++ };
++}
+--- a/src/skills/experience.ts
++++ b/src/skills/experience.ts
+@@ -1,3 +1,4 @@
++import {TASK_CONTEXT_VERSION} from './context.js';
+ import type {BookStorage} from '../planning/book.js';
+ import type {GameState} from '../game/types.js';
+ import {reachableBerries,path,dangerous} from '../game/world.js';
+@@ -12,7 +13,7 @@
+ }
+ /** Relational bins + objective, encoder, skill AND utility versions. Not a causal Q value. */
+ export function experienceKey(s:GameState,spec:SkillSpec,stage='entry'):string {
+- return JSON.stringify(['deliver-five/v1','relational/v1','utility/v1',spec.id,spec.version,JSON.stringify(spec.features),JSON.stringify(spec.weights),stage,
++ return JSON.stringify(['gs/skill-feedback/v042',TASK_CONTEXT_VERSION,'deliver-five/v1','relational/v1','utility/v1',spec.id,spec.version,JSON.stringify(spec.features),JSON.stringify(spec.weights),stage,
+   s.energy<25?'low':s.energy<55?'mid':'high',s.bag,Math.max(0,s.target-s.delivered),
+   reachableBerries(s).length?'reachable':'blocked',s.guards.some(g=>g.eating>0)?'distracted':'awake',s.width,s.height]);
+ }
+--- a/src/skills/facts.ts
++++ b/src/skills/facts.ts
+@@ -28,6 +28,7 @@
+ }
+ export function packet(input:Omit<DecisionPacket,'schema'|'id'|'factsVersion'|'questionVersion'|'candidates'> & {candidates:FactCandidate[]}):DecisionPacket{
+  const p:DecisionPacket={schema:'gs/decision-packet/v1',id:'',factsVersion:FACTS_VERSION,questionVersion:QUESTION_VERSION,...input,candidates:neutralOrder(input.candidates,input.orderSeed)};
++ if(input.taskContext)p.questionVersion='gs/select/v042';
+  p.id=evidenceKey({...p,id:undefined});validatePacket(p);return structuredClone(p);
+ }
+ /** Only the shared packet is available here. No world/simulator, private rank, or answer key. */
+--- /dev/null
++++ b/src/skills/recovery.ts
+@@ -0,0 +1,56 @@
++/** Run-local recovery evidence. Canonical strings are equality keys; short hashes are labels only. */
++import {stableJson,evidenceKey} from '../../vendor/gs-engine-ts/src/decision.js';
++import type {DecisionAudit} from '../../vendor/gs-engine-ts/src/decision.js';
++import type {Json} from '../../vendor/gs-engine-ts/src/types.js';
++import type {SkillSpec,Binding} from './spec.js';
++import type {GameState} from '../game/types.js';
++import {exactWorldKey} from '../planning/programs.js';
++import {TASK_CONTEXT_VERSION} from './context.js';
++export type FailureKind='decision_blocked'|'execution_failed'|'structure_gap'|'infrastructure'|'external_change';
++export function canonicalSkill(s:SkillSpec):string {
++ return stableJson({schema:s.schema,parameters:s.parameters,initiation:s.initiation,success:s.success,maxSteps:s.maxSteps,
++  capabilities:[...s.capabilities].sort(),features:[...s.features].sort(),weights:s.weights,
++  phases:s.phases.map(p=>({rule:p.rule,until:p.until,maxSteps:p.maxSteps}))});
++}
++/** Guards zero-action repeats with mere numeric changes; not a global equivalence claim. */
++export function skillFamily(s:SkillSpec):string {
++ return stableJson({parameters:s.parameters,initiation:s.initiation,success:s.success,
++  capabilities:[...s.capabilities].sort(),features:[...s.features].sort(),phases:s.phases.map(p=>({rule:p.rule,until:p.until}))});
++}
++export function structureId(s:SkillSpec){return evidenceKey(canonicalSkill(s));}
++export function recoveryScope(s:GameState,b:Binding,controller:string):string {
++ return stableJson({world:exactWorldKey(s),binding:{...b,targetBerryIds:[...b.targetBerryIds].sort()},controller,contextVersion:TASK_CONTEXT_VERSION});
++}
++export type ExecutionFailure={schema:'gs/execution-failure/v1';id:string;kind:FailureKind;reason:string;
++ runId:string;skillId:string;skillVersion:number;structureId:string;structure:string;family:string;scope:string;
++ spec:SkillSpec;binding:Binding;phase:{index:number;rule:string};
++ world:{startRevision:string;revision:string;turn:number;key:string};
++ outcome:{steps:number;energyDelta:number;deliveredDelta:number;dispatchCompleted:boolean};
++ decision:DecisionAudit|null;controller:string;contextVersion:string;
++ route:'pause-and-inspect'|'repair-skill'|'reconcile-execution'|'reobserve';
++ informationNovel:boolean;};
++export class RecoveryJournal {
++ private records:ExecutionFailure[]=[];
++ private seen=new Set<string>();
++ record(input:Omit<ExecutionFailure,'schema'|'id'|'informationNovel'>):ExecutionFailure {
++  const novelty=stableJson({scope:input.scope,structure:input.structure,kind:input.kind,phase:input.phase,reason:input.reason,
++   context:input.decision?.packet.taskContext??null,candidates:input.decision?.packet.candidates??null});
++  const row:ExecutionFailure={...structuredClone(input),schema:'gs/execution-failure/v1',id:evidenceKey(novelty),informationNovel:!this.seen.has(novelty)};
++  this.seen.add(novelty);this.records.push(row);this.records=this.records.slice(-16);return structuredClone(row);
++ }
++ list(){return structuredClone(this.records);}
++ latest(){return this.records.length?structuredClone(this.records[this.records.length-1]!):null;}
++ repeated(spec:SkillSpec,scope:string):ExecutionFailure|null {
++  const structure=canonicalSkill(spec),family=skillFamily(spec);
++  const found=[...this.records].reverse().find(r=>r.scope===scope&&['execution_failed','structure_gap','decision_blocked'].includes(r.kind)&&
++   (r.structure===structure||(r.outcome.steps===0&&r.family===family)));
++  return found?structuredClone(found):null;
++ }
++ /** Full most recent packet+answer and bounded prior summaries; never replace validation feedback. */
++ feedback():Json|undefined {
++  const last=this.latest();if(!last)return undefined;
++  return {schema:'gs/repair-evidence/v1',contextVersion:TASK_CONTEXT_VERSION,latest:last as unknown as Json,
++   previous:this.records.slice(-4,-1).map(r=>({id:r.id,kind:r.kind,reason:r.reason,structureId:r.structureId,phase:r.phase,outcome:r.outcome})),
++   instructions:'Read measured execution feedback separately from proposal validation. None is a judgment block, not proof of physical impossibility. A new ID/title is not a new behavior. Root goal, authority and budgets remain fixed.'};
++ }
++}
+--- a/src/skills/runtime.ts
++++ b/src/skills/runtime.ts
+@@ -1,6 +1,6 @@
+ import type {JudgmentBackend,ScheduleReport} from '../../vendor/gs-engine-ts/src/judgment.js';
+ import {JudgmentError} from '../../vendor/gs-engine-ts/src/judgment.js';
+-import {evaluatePacket} from '../decision/pipeline.js';
++import {evaluatePacket,questionVersionFor} from '../decision/pipeline.js';
+ import type {Strategy} from '../decision/pipeline.js';
+ import {packet,selectPacket,parentRule} from './facts.js';
+ import type {RootFacts} from './facts.js';
+@@ -9,7 +9,7 @@
+ import {GSEngine} from '../../vendor/gs-engine-ts/src/engine.js';
+ import {RootBudget,ExecutionLease} from '../../vendor/gs-engine-ts/src/resources.js';
+ import type {Json,Domain,Context,Snapshot,Candidate,ExecuteRequest,Receipt,Feedback,Policy,EngineEvent,StepResult,Judgment,ModelResult} from '../../vendor/gs-engine-ts/src/types.js';
+-import {ProposalRejected} from '../../vendor/gs-engine-ts/src/rejection.js';
++import {ProposalRejected,RepairBlocked} from '../../vendor/gs-engine-ts/src/rejection.js';
+ import {GameWorld,path,reachableBerries} from '../game/world.js';
+ import {TuanziDomain,describeAction} from '../game/domain.js';
+ import {GOAL,CAPABILITIES,INITIAL_POLICY,dist} from '../game/types.js';
+@@ -22,6 +22,9 @@
+ import type {SkillSpec,Binding,FeatureId,Weights} from './spec.js';
+ import {createFrame,advance,applicable,localSuccess,candidates,markApplied,failureReason,simulateSkill} from './behavior.js';
+ import type {Frame} from './behavior.js';
++import {skillTaskContext,localGoalText,TASK_CONTEXT_VERSION} from './context.js';
++import {RecoveryJournal,canonicalSkill,skillFamily,structureId,recoveryScope} from './recovery.js';
++import type {ExecutionFailure,FailureKind} from './recovery.js';
+ import {ExperienceTable,experienceKey,projectState} from './experience.js';
+ import type {ExperienceMode,Outcome} from './experience.js';
+ import {ReactiveCatalogue,synthesizeAccess} from './catalogue.js';
+@@ -32,10 +35,10 @@
+ export type RootCandidate=Candidate<SkillCall>;
+ export type ProviderRequest={level:'parent'|'child';goal:string;projection:Json;packet?:DecisionPacket;spec?:SkillSpec;binding?:Binding;candidates:{id:string;description:string;action:Json;facts?:Json;evidence?:Json}[]};
+ export type ReactiveProviders={identity?:string;source?:DecisionSource;select?:(input:ProviderRequest,signal:AbortSignal)=>Promise<ModelResult<Judgment>>;
+- generate?:(input:{state:GameState;binding:Binding;feedback?:Json},signal:AbortSignal)=>Promise<ModelResult<unknown>>};
++ generate?:(input:{state:GameState;binding:Binding;feedback?:Json;executionFeedback?:Json},signal:AbortSignal)=>Promise<ModelResult<unknown>>};
+ export type SkillSummary={runId:string;parentRunId:string;skillId:string;version:number;source:string;binding:Binding;
+  selectorIdentity:string;questionVersion:string;factsVersion:string;validationScope:'actual-controller-run';
+- status:'success'|'failed'|'interrupted'|'external_change';reason:string;localSucceeded:boolean;rootSucceeded:boolean;
++ status:'success'|'failed'|'interrupted'|'external_change'|'decision_blocked';reason:string;localSucceeded:boolean;rootSucceeded:boolean;
+  start:GameState;final:GameState;outcome:Outcome;phases:number;modelUse:'offline'|'provider';experienceUsed:boolean};
+ const makeLimits=(actions=180)=>({maxCycles:500,maxActions:actions,maxModelCalls:500,maxRepairs:3,maxDurationMs:86400000,ioTimeoutMs:30000,noProgressWindow:100,historySize:16,maxProposalAttempts:3});
+ function parseBinding(raw:unknown):Binding{
+@@ -67,7 +70,7 @@
+   return neutralOrder(this.rankings.map(x=>({id:actionKey(x.action),description:describeAction(x.action),capability:`game.${x.action.kind}`,action:x.action,intent:x.action.kind==='wait'?'hold' as const:x.action.kind==='move'?'reposition' as const:'engage' as const})),this.host.orderSeed(ctx.snapshot.state));
+  }
+  decisionPacket(ctx:Context<GameState,GameAction,SkillPolicy>,cs:readonly Candidate<GameAction>[]){
+-  return packet({level:'child',goal:this.spec.success,snapshotRevision:ctx.snapshot.revision,policyVersion:ctx.policy.version,orderSeed:this.host.orderSeed(ctx.snapshot.state),scope:{name:'registered-phase-candidates/v031',note:'Phase contracts constrain candidates; one-step safety uses deterministic physics. This is not all possible actions.'},projection:projectJson(ctx.snapshot.state,this.spec.features,this.spec.phases[this.frame.phase]?.rule??'done'),preferences:this.spec.weights,candidates:cs.map(c=>({id:c.id,description:c.description,action:c.action,facts:this.rankings.find(x=>actionKey(x.action)===c.id)!.facts}))});
++  return packet({level:'child',goal:localGoalText(this.spec),taskContext:skillTaskContext(this.spec,this.frame,ctx.snapshot.state),snapshotRevision:ctx.snapshot.revision,policyVersion:ctx.policy.version,orderSeed:this.host.orderSeed(ctx.snapshot.state),scope:{name:'registered-phase-candidates/v031',note:'Phase contracts constrain candidates; one-step safety uses deterministic physics. This is not all possible actions.'},projection:projectJson(ctx.snapshot.state,this.spec.features,this.spec.phases[this.frame.phase]?.rule??'done'),preferences:this.spec.weights,candidates:cs.map(c=>({id:c.id,description:c.description,action:c.action,facts:this.rankings.find(x=>actionKey(x.action)===c.id)!.facts}))});
+  }
+  selected(cs:readonly Candidate<GameAction>[]){return cs.find(c=>actionKey(c.action)===actionKey(this.rankings[0]!.action))?.id??null;}
+  gate(ctx:Context<GameState,GameAction,SkillPolicy>,c:Candidate<GameAction>){
+@@ -95,6 +98,9 @@
+ class RootDomain implements Domain<GameState,SkillCall,RootPolicy>{
+  private receipts=new Map<string,{request:string;receipt:Receipt}>();
+  constructor(readonly host:SkillSession){}
++ repairContext(){return this.host.recovery.feedback();}
++ assess(){return this.host.pendingHalt?{kind:'pause' as const,...this.host.pendingHalt}:null;}
++ afterTransition(){return this.host.pendingHalt?{kind:'pause' as const,...this.host.pendingHalt}:null;}
+  async observe(signal:AbortSignal){this.host.budget.check(signal);const state=this.host.world.snapshot();return {state,revision:String(state.revision),observedAt:Date.now()};}
+  enumerate(ctx:Context<GameState,SkillCall,RootPolicy>){return this.host.offers(ctx.snapshot.state,ctx.policy.body);}
+  gate(ctx:Context<GameState,SkillCall,RootPolicy>,c:RootCandidate){
+@@ -109,13 +115,20 @@
+   const receipt=await this.host.runChildQuantum(req.candidate.action,signal);this.receipts.set(req.idempotencyKey,{request:identity,receipt});return receipt;
+  }
+  completion(s:Snapshot<GameState>){return this.host.domain.completion(s);}
+- feedback(b:Snapshot<GameState>,c:RootCandidate,r:Receipt,a:Snapshot<GameState>):Feedback{return {actionSucceeded:r.status==='applied',progress:a.state.turn>b.state.turn||this.host.active===null,metrics:{energyDelta:a.state.energy-b.state.energy,deliveredDelta:a.state.delivered-b.state.delivered},facts:[r.detail]};}
++ feedback(b:Snapshot<GameState>,c:RootCandidate,r:Receipt,a:Snapshot<GameState>):Feedback{
++  const q=this.host.quantumProgress;
++  return {actionSucceeded:q.physicalActionApplied||q.localSucceeded,progress:q.localGoalProgress||q.localSucceeded,
++   metrics:{dispatchCompleted:r.status==='applied'?1:0,physicalChanged:a.state.turn>b.state.turn?1:0,
++    physicalProgress:q.physicalActionApplied&&q.localGoalProgress?1:0,localGoalProgress:q.localGoalProgress?1:0,
++    informationProgress:q.informationNovel?1:0,localSucceeded:q.localSucceeded?1:0,
++    energyDelta:a.state.energy-b.state.energy,deliveredDelta:a.state.delivered-b.state.delivered},facts:[r.detail]};
++ }
+  parsePolicy(raw:unknown){return parseRoot(raw);}
+  validatePolicy(p:RootPolicy){try{parseRoot(p);return [];}catch(e){return [String(e)];}}
+  validateProposal(p:RootPolicy,ctx:Context<GameState,SkillCall,RootPolicy>){
+   if(p.skills.some(s=>ctx.policy.body.skills.some(old=>old.id===s.id&&old.version===s.version&&JSON.stringify(old)!==JSON.stringify(s))))return ['same skill identity/version cannot be mutated'];
+   const added=p.skills.filter(s=>!ctx.policy.body.skills.some(x=>x.id===s.id&&x.version===s.version));
+-  for(const spec of added){if(spec.success!=='access-open')return ['only bounded access compositions may be added'];const check=simulateSkill(spec,ctx.snapshot.state,this.host.accessBinding(ctx.snapshot.state),n=>this.host.chargeSearch(n));this.host.planning.shadowChecks++;if(!check.success)return [check.reason];}
++  for(const spec of added){this.host.assertNovel(spec,ctx.snapshot.state,this.host.accessBinding(ctx.snapshot.state));if(spec.success!=='access-open')return ['only bounded access compositions may be added'];const check=simulateSkill(spec,ctx.snapshot.state,this.host.accessBinding(ctx.snapshot.state),n=>this.host.chargeSearch(n));this.host.planning.shadowChecks++;if(!check.success)return [check.reason];}
+   return [];
+  }
+ }
+@@ -128,6 +141,9 @@
+  readonly budget:RootBudget;readonly lease=new ExecutionLease();readonly catalogue:ReactiveCatalogue;readonly experience:ExperienceTable;
+  readonly events:EngineEvent[]=[];readonly interventions:{at:number;tool:EditTool;point:Point;after:GameState;message:string}[]=[];
+  readonly initial:GameState;readonly initialPolicy=structuredClone(INITIAL_POLICY);readonly book=new SkillBook();readonly planning=emptyStats();
++ readonly recovery=new RecoveryJournal();
++ pendingHalt:{reason:string;evidence:Json}|null=null;
++ quantumProgress={physicalActionApplied:false,localGoalProgress:false,localSucceeded:false,informationNovel:false};
+  readonly summaries:SkillSummary[]=[];active:Active|null=null;lastResult:StepResult|undefined;
+  readonly runId:string;private seq=0;private childSeq=0;private busy=false;private terminated=false;
+  private denied=new Set<string>();private rootRank=new Map<string,number>();private rootFacts=new Map<string,RootFacts>();private cancelled=false;
+@@ -156,19 +172,21 @@
+     const p=this.parentPacket(ctx.snapshot.state,ctx.policy.body,cs,ctx.policy.version);
+     return this.decide(p,ctx.snapshot.state,cs,signal);
+    }},
+-   arbiter:{decide:(_ctx,cs,j)=>j.choice&&cs.some(c=>c.id===j.choice)&&(j.suitability[j.choice]??0)>=0.5?{kind:'execute',candidateId:j.choice}:{kind:'repair',reason:'no_appropriate_skill'}},
++   arbiter:{decide:(ctx,cs,j)=>this.parentRoute(ctx,cs,j)},
+    planner:{propose:async(ctx,_reason,signal)=>{
+     const s=ctx.snapshot.state,binding=this.accessBinding(s);
+     if(!s.guards.length||!s.berries.length||!s.bag)return {output:{baseVersion:ctx.policy.version,basedOnRevision:ctx.snapshot.revision,body:ctx.policy.body,explanation:'当前技能与已授权生成语法无法继续，交还控制权。'}};
+     let spec:SkillSpec;this.planning.searchRuns++;const start=performance.now();
+     this.emit('skill_generation_started',{source:options.providers?.generate?'llm':'bounded-grammar',binding});
+     if(options.providers?.generate){
+-     const a=await this.measured('skill-generator','G',signal,()=>options.providers!.generate!({state:s,binding,...(ctx.repairFeedback?{feedback:ctx.repairFeedback}:{})},signal));
++     const a=await this.measured('skill-generator','G',signal,()=>options.providers!.generate!({state:s,binding,...(ctx.repairFeedback?{feedback:ctx.repairFeedback}:{}),...(ctx.executionFeedback?{executionFeedback:ctx.executionFeedback}:{})},signal));
+      try{spec=parseSkill(a.output);if(spec.success!=='access-open')throw Error('generator may only add access skill');spec.source='llm';}
+      catch(e){throw new ProposalRejected({stage:'skill-schema',reason:String(e)},a.usage);}
++     this.assertNovel(spec,s,binding);
+      const check=simulateSkill(spec,s,binding,n=>this.chargeSearch(n));this.planning.shadowChecks++;
+      this.emit('skill_validation',{specId:spec.id,...check,final:undefined,actualController:'NOT_YET_RUN'});if(!check.success)throw new ProposalRejected({stage:'local-verification',reason:check.reason,steps:check.steps},a.usage);
+     }else spec=await synthesizeAccess(s,binding,n=>this.chargeSearch(n),signal,data=>this.emit('skill_candidate_evaluated',data));
++    this.assertNovel(spec,s,binding);
+     this.planning.searchMs+=performance.now()-start;this.planning.source=options.providers?.generate?'llm':'grammar-search';
+     this.catalogue.trial(spec);this.emit('skill_generated',{spec,status:'trial',note:'registered grammar/rules are authored; phase composition is generated',validationScope:'authored-reference-controller-only',actualController:'NOT_YET_RUN'});
+     return {output:{baseVersion:ctx.policy.version,basedOnRevision:ctx.snapshot.revision,
+@@ -176,7 +194,7 @@
+    }},journal:{append:e=>{
+     this.emit('parent_event',{event:e});
+     if(e.type==='policy_committed')this.emit('hierarchy_policy_committed',e.data);
+-    if(e.type==='proposal_rejected')this.emit(e.type,e.data);
++    if(['proposal_rejected','repair_blocked','repair_requested','post_transition_route'].includes(e.type))this.emit(e.type,e.data);
+    }} });
+  }
+  get engine():{currentPolicy:Policy<GamePolicy>;counters:GSEngine<GameState,SkillCall,RootPolicy>['counters']}{return {currentPolicy:{id:'hierarchy-display',version:this.rootEngine.currentPolicy.version,body:{mode:'program' as const,
+@@ -185,7 +203,40 @@
+  emit(type:string,data:unknown){const event={runId:this.runId,seq:++this.seq,cycle:this.rootEngine?.counters.cycles??0,at:Date.now(),type,data:structuredClone(data)};this.events.push(event);this.onEvent?.(event);}
+  chargeSearch(n:number){this.budget.reserve('searchNodes',n);this.planning.expanded+=n;}
+  accessBinding(s:GameState):Binding{const g=s.guards[0];return {targetId:g?.id??'',targetBerryIds:s.berries.filter(b=>!g||dist(g.anchor,b)<=4).map(b=>b.id),amount:0};}
+- private denialKey(s:GameState,c:SkillCall){return JSON.stringify([physicalKey(s),s.walls,c]);}
++ private parentRoute(ctx:Context<GameState,SkillCall,RootPolicy>,cs:readonly RootCandidate[],j:Judgment):import('../../vendor/gs-engine-ts/src/types.js').Decision{
++  if(j.choice&&cs.some(c=>c.id===j.choice)&&(j.suitability[j.choice]??0)>=.5)return {kind:'execute',candidateId:j.choice};
++  const s=ctx.snapshot.state;
++  const generationCanHelp=!reachableBerries(s).length&&s.guards.length>0&&s.berries.length>0&&s.bag>0&&
++   !cs.some(c=>ctx.policy.body.skills.find(x=>x.id===c.action.skillId&&x.version===c.action.version)?.success==='access-open');
++  if(generationCanHelp)return {kind:'repair',reason:'no_appropriate_skill'};
++  const reason='decision_blocked:parent_no_suitable_skill';
++  const audit=this.decisions.at(-1);
++  const evidence={kind:'decision_blocked',level:'parent',reason,worldRevision:String(s.revision),actualSteps:0,
++   decision:audit as unknown as Json??null,contextVersion:TASK_CONTEXT_VERSION,
++   nextAction:'Inspect existing candidates and task evidence; no applicable missing contract has been identified. Do not regenerate the same access skill.'};
++  this.pendingHalt={reason,evidence};this.emit('decision_blocked',this.pendingHalt);return {kind:'pause',reason};
++ }
++ controllerKey(){return `${this.options.decision?.backend.id??this.options.providers?.identity??'rules/v031'}|${this.options.decision?.strategy??'classic'}|gs/select/v042|${TASK_CONTEXT_VERSION}`;}
++ denialKey(s:GameState,c:SkillCall){
++  const spec=this.rootEngine.currentPolicy.body.skills.find(x=>x.id===c.skillId&&x.version===c.version);
++  return JSON.stringify([recoveryScope(s,c.binding,this.controllerKey()),spec?canonicalSkill(spec):c]);
++ }
++ assertNovel(spec:SkillSpec,s:GameState,binding:Binding){
++  const prior=this.recovery.repeated(spec,recoveryScope(s,binding,this.controllerKey()));
++  if(prior){
++   const evidence={schema:'gs/duplicate-repair/v1',priorFailureId:prior.id,priorSkillId:prior.skillId,proposedSkillId:spec.id,
++    priorStructureId:prior.structureId,proposedStructureId:structureId(spec),sameStructure:prior.structure===canonicalSkill(spec),
++    sameZeroStepFamily:prior.outcome.steps===0&&prior.family===skillFamily(spec),snapshotRevision:String(s.revision),
++    message:'No new execution evidence or material behavior at this scope. Renaming is not recovery. Inspect the blocked judgment or start an explicit new experiment.'};
++   this.pendingHalt={reason:'duplicate_repair_no_new_evidence',evidence};this.emit('duplicate_repair_blocked',evidence);
++   throw new RepairBlocked(this.pendingHalt.reason,evidence);
++  }
++ }
++ diagnostics(){return {schema:'gs/recovery-diagnostics/v1',contextVersion:TASK_CONTEXT_VERSION,
++  policyVersion:this.rootEngine.currentPolicy.version,latestFailure:this.recovery.latest(),failureCount:this.recovery.list().length,
++  pendingHalt:this.pendingHalt,budgets:{repairs:{used:this.rootEngine.counters.repairs,limit:3},...this.budget.snapshot()},
++  semanticScope:'Abstention is a decision block, not evidence that the physical skill is impossible. No automatic fallback.'};}
++
+  offers(s:GameState,p:RootPolicy):RootCandidate[]{
+   if(this.active)return [{id:`continue:${this.active.runId}`,description:`继续子 G/S：${this.active.spec.title}`,capability:'runtime.skill',action:this.active.call,intent:'special'}];
+   this.rootRank.clear();this.rootFacts.clear();const offers:RootCandidate[]=[];
+@@ -193,7 +244,7 @@
+   const add=(spec:SkillSpec|undefined,binding:Binding)=>{
+    if(!spec||!applicable(spec,binding,s))return;
+    const call:SkillCall={kind:'callSkill',skillId:spec.id,version:spec.version,binding};
+-   if(this.denied.has(this.denialKey(s,call))){this.emit('candidate_filtered',{reason:'already-failed-at-identical-state',action:call});return;}
++   if(this.denied.has(this.denialKey(s,call))||this.recovery.repeated(spec,recoveryScope(s,binding,this.controllerKey()))){this.emit('candidate_filtered',{reason:'already-failed-structure-at-identical-evidence',action:call});return;}
+    const id=`${spec.id}:${binding.targetId}:${binding.amount}`;
+    const history=this.experience.mode==='use'?this.experience.list().find(r=>r.key===experienceKey(s,spec)):undefined;
+    const facts:RootFacts={contract:spec.success,energy:s.energy,bag:s.bag,capacity:s.capacity,delivered:s.delivered,target:s.target,homeSteps:home,
+@@ -228,27 +279,28 @@
+   const start=performance.now();this.emit('decision_packet',p);
+   try{
+    const a=useProvider?await this.measured(p.level,'S',signal,()=>this.options.providers!.select!({level:p.level,goal:p.goal,projection:p.projection,packet:p,...(spec?{spec}:{}),...(binding?{binding}:{}),candidates:p.candidates},signal)):{output:judgment(cs,selectPacket(p))};
+-   const audit:DecisionAudit={packet:p,source,selectorIdentity:useProvider?(a.usage?.model??this.options.providers?.identity??'configured-provider-unreported'):'authored-rules/v031',choice:a.output.choice,status:a.output.choice?'selected':'abstained',latencyMs:performance.now()-start,externalRequests:useProvider?1:0,questions:useProvider?cs.length+1:0};
++   const audit:DecisionAudit={packet:p,source,selectorIdentity:useProvider?(a.usage?.model??this.options.providers?.identity??'configured-provider-unreported'):'authored-rules/v031',choice:a.output.choice,status:a.output.choice?'selected':'abstained',latencyMs:performance.now()-start,externalRequests:useProvider?1:0,questions:useProvider?cs.length+1:0,judgment:structuredClone(a.output)};
+    this.decisions.push(audit);this.emit('decision_audit',audit);return a;
+   }catch(e){const audit:DecisionAudit={packet:p,source,selectorIdentity:this.options.providers?.identity??'configured-provider-unreported',choice:null,status:'error',latencyMs:performance.now()-start,externalRequests:useProvider?1:0,questions:useProvider?cs.length+1:0,error:String(e).slice(0,300)};this.decisions.push(audit);this.emit('decision_audit',audit);throw e;}
+  }
+  private async decideTasks(p:DecisionPacket,signal:AbortSignal):Promise<ModelResult<Judgment>>{
+-  const d=this.options.decision!,start=performance.now();p=structuredClone(p);p.questionVersion=`gs/judgments/v04/${d.strategy}`;p.id=evidenceKey({...p,id:''});let actualRequests=0;let report:ScheduleReport|undefined;
++  const d=this.options.decision!,start=performance.now();p=structuredClone(p);p.questionVersion=questionVersionFor(p,d.strategy);p.id=evidenceKey({...p,id:''});let actualRequests=0;let report:ScheduleReport|undefined;
+   this.emit('decision_packet',p);
+   try{
+    const result=await evaluatePacket(p,d.strategy,d.backend,{signal,timeoutMs:d.timeoutMs??20000,maxRequests:d.maxRequests??96,maxQuestions:d.maxQuestions??128,
+     currentKey:()=>String(this.world.snapshot().revision)===p.snapshotRevision?p.id:'changed',
+     charge:n=>{this.budget.check(signal);if(n.externalRequests){this.budget.reserve('providerCalls',n.externalRequests,signal);this.planning.providerS+=n.externalRequests;actualRequests+=n.externalRequests;}},
+-    onBatch:b=>{this.emit('judgment_batch',b);if(b.external)this.providerReports.push({attempt:this.budget.snapshot().used.providerCalls,level:p.level,status:b.status==='returned'?'returned':'rejected-or-failed',usage:b.usage,latencyMs:b.latencyMs,...(b.error?{error:b.error}:{})});}
++    onBatch:b=>{this.emit('judgment_batch',{...b,questionStrategy:d.strategy,dispatchStrategy:d.strategy==='serial'?'serial':'batch'});if(b.external)this.providerReports.push({attempt:this.budget.snapshot().used.providerCalls,level:p.level,status:b.status==='returned'?'returned':'rejected-or-failed',usage:b.usage,latencyMs:b.latencyMs,...(b.error?{error:b.error}:{})});}
+    });report=result.report;
+    const source:DecisionSource=d.backend.kind==='rule'?'authored-rule':d.backend.kind==='mock'?'test-provider':d.backend.kind==='jev'?'jev':'configured-model';
+-   const a:DecisionAudit={packet:p,source,selectorIdentity:[...new Set(report.batches.map(x=>x.backend))].join('|')||d.backend.id,choice:result.judgment.choice,status:result.judgment.choice?'selected':'abstained',latencyMs:performance.now()-start,externalRequests:actualRequests,questions:report.questions};
++   const a:DecisionAudit={packet:p,source,selectorIdentity:[...new Set(report.batches.map(x=>x.backend))].join('|')||d.backend.id,choice:result.judgment.choice,status:result.judgment.choice?'selected':'abstained',latencyMs:performance.now()-start,externalRequests:actualRequests,questions:report.questions,judgment:structuredClone(result.judgment)};
+    this.decisions.push(a);this.emit('decision_audit',a);return {output:result.judgment};
+   }catch(e){if(e instanceof JudgmentError)report=e.report;const source:DecisionSource=d.backend.kind==='rule'?'authored-rule':d.backend.kind==='mock'?'test-provider':d.backend.kind==='jev'?'jev':'configured-model';const a:DecisionAudit={packet:p,source,selectorIdentity:d.backend.id,choice:null,status:'error',latencyMs:performance.now()-start,externalRequests:actualRequests,questions:report?.questions??0,error:String(e).slice(0,300)};this.decisions.push(a);this.emit('decision_audit',a);this.emit('judgment_failed',{reason:String(e),snapshotKey:p.id});throw e;}
+   finally{if(report){this.judgmentRuns.push(report);this.emit('judgment_run',report);}}
+  }
+  async runChildQuantum(call:SkillCall,signal:AbortSignal):Promise<Receipt>{
+   this.budget.check(signal);
++  this.quantumProgress={physicalActionApplied:false,localGoalProgress:false,localSucceeded:false,informationNovel:false};
+   if(this.active&&JSON.stringify(call)!==JSON.stringify(this.active.call))return {status:'failed',detail:'another child retains execution lease'};
+   if(!this.active){
+    const spec=this.rootEngine.currentPolicy.body.skills.find(s=>s.id===call.skillId&&s.version===call.version);if(!spec)return {status:'failed',detail:'skill not in current root policy'};
+@@ -256,11 +308,11 @@
+    const runId=`${this.runId}/skill-${++this.childSeq}`;this.lease.acquire(runId,1);
+    const start=this.world.snapshot(),domain=new SkillDomain(this,spec,call.binding,runId),resources=this.budget.snapshot().used;
+    const key=experienceKey(start,spec);const initialPolicy={id:spec.id,version:spec.version,body:{spec,binding:call.binding}};
+-   const child=new GSEngine<GameState,GameAction,SkillPolicy>({runId,goal:{id:spec.success,description:`局部目标：${spec.success}`,verifierId:`registered:${spec.success}`},initialPolicy,domain,limits:makeLimits(spec.maxSteps),
++   const child=new GSEngine<GameState,GameAction,SkillPolicy>({runId,goal:{id:spec.success,description:localGoalText(spec),verifierId:`registered:${spec.success}`},initialPolicy,domain,limits:makeLimits(spec.maxSteps),
+     account:{cycle:()=>this.budget.reserve('cycles'),action:()=>this.budget.reserve('actions')},
+     selector:{evaluate:async(ctx,cs,activeSignal)=>{
+       return this.decide(domain.decisionPacket(ctx,cs),ctx.snapshot.state,cs,activeSignal,spec,call.binding);
+-    }},arbiter:{decide:(_ctx,_cs,j)=>j.choice?{kind:'execute',candidateId:j.choice}:{kind:'pause',reason:'no_local_suitable_action'}},
++    }},arbiter:{decide:(_ctx,_cs,j)=>j.choice?{kind:'execute',candidateId:j.choice}:{kind:'pause',reason:'decision_blocked:no_local_suitable_action'}},
+     planner:{propose:async(ctx)=>({output:{baseVersion:ctx.policy.version,basedOnRevision:ctx.snapshot.revision,body:ctx.policy.body,explanation:'局部技能无法继续，将失败证据交还父层；不扩充子预算。'}})},
+     journal:{append:e=>{this.emit('child_event',{parentRunId:this.runId,skillRunId:runId,event:e});if(['observed','candidates','selector_requested','selector_answered','decision','transition','stale_result_discarded'].includes(e.type))this.emit(e.type,e.data);}}
+    });
+@@ -270,11 +322,15 @@
+   }
+   const active=this.active!;this.lease.assert(active.runId);
+   const result=await active.engine.step(signal);
++  if(result.kind==='executed'){
++   this.quantumProgress.physicalActionApplied=result.feedback.actionSucceeded;
++   this.quantumProgress.localGoalProgress=result.feedback.progress;
++  }
+   this.options.afterChildStep?.(this);
+   if(['done','paused','fault','stopped'].includes(result.kind)){
+    const success=result.kind==='done'&&result.outcome==='succeeded';
+    const infrastructural=result.kind==='fault'||(result.kind==='paused'&&'reason'in result&&/unknown|timeout|cancel|provider/i.test(result.reason))||(result.kind==='stopped'&&'reason'in result&&/root_budget|deadline/.test(result.reason));
+-   this.finishChild(success,result.kind==='done'?result.outcome:('reason' in result?result.reason:result.kind),infrastructural);
++   this.finishChild(success,result.kind==='done'?(success?'succeeded':failureReason(active.spec,active.domain.frame,this.world.snapshot())??'local_goal_failed'):('reason' in result?result.reason:result.kind),infrastructural);
+    if(infrastructural)return {status:'unknown',detail:`child infrastructure stopped: ${'reason' in result?result.reason:'failure'}`};
+    if(result.kind==='paused'&&'reason'in result&&result.reason.includes('unknown'))return {status:'unknown',detail:'child outcome unknown; root must pause'};
+    if(this.cancelled)return {status:'unknown',detail:'cancelled while child executing; reconcile recorded state'};
+@@ -286,13 +342,34 @@
+   const a=this.active;if(!a)return;const s=this.world.snapshot(),resources=this.budget.snapshot().used,external=this.interventions.length>a.interventionCount;
+   const outcome:Outcome={success,steps:s.turn-a.start.turn,energyDelta:s.energy-a.start.energy,attacks:s.attacks-a.start.attacks,
+     providerCalls:resources.providerCalls-a.resources.providerCalls,searchNodes:resources.searchNodes-a.resources.searchNodes};
+-  const status=external?'external_change':interrupted||this.cancelled?'interrupted':success?'success':'failed';
++  const decisionBlocked=reason.startsWith('decision_blocked:')||reason==='no_local_suitable_action';
++  const status=external?'external_change':interrupted||this.cancelled?'interrupted':decisionBlocked?'decision_blocked':success?'success':'failed';
+   const summary:SkillSummary={selectorIdentity:([...new Set(this.decisions.slice(a.decisionStart).filter(x=>x.packet.level==='child').map(x=>x.selectorIdentity))].join('|')||'no-child-judgment'),questionVersion:([...new Set(this.decisions.slice(a.decisionStart).filter(x=>x.packet.level==='child').map(x=>x.packet.questionVersion))].join('|')||'no-child-judgment'),factsVersion:FACTS_VERSION,validationScope:'actual-controller-run',runId:a.runId,parentRunId:this.runId,skillId:a.spec.id,version:a.spec.version,source:a.spec.source,binding:a.call.binding,
+     status,reason,localSucceeded:success,rootSucceeded:s.delivered>=s.target&&s.energy>0,start:a.start,final:s,outcome,phases:a.domain.frame.transitions,
+     modelUse:this.options.providers?.select||(this.options.decision&&!['rule','mock'].includes(this.options.decision.backend.kind))?'provider':'offline',experienceUsed:this.experience.mode==='use'};
+-  this.summaries.push(summary);this.catalogue.result(a.spec,success,s.scenario,external||interrupted||this.cancelled,{selector:summary.selectorIdentity,questionVersion:summary.questionVersion,factsVersion:FACTS_VERSION,worldKey:exactWorldKey(a.start),scope:'actual-controller-run'});
+-  if(!external&&!interrupted&&!this.cancelled&&!reason.includes('budget')&&!reason.includes('unknown')&&!reason.includes('timeout'))this.experience.observe(a.key,outcome,reason);
+-  if(!success)this.denied.add(this.denialKey(s,a.call));
++  this.summaries.push(summary);if(!decisionBlocked)this.catalogue.result(a.spec,success,s.scenario,external||interrupted||this.cancelled,{selector:summary.selectorIdentity,questionVersion:summary.questionVersion,factsVersion:FACTS_VERSION,worldKey:exactWorldKey(a.start),scope:'actual-controller-run'});
++  if(!decisionBlocked&&!external&&!interrupted&&!this.cancelled&&!/root_budget|root_deadline|action_budget_exhausted|cycle_budget_exhausted|model_call_budget_exhausted/.test(reason)&&!reason.includes('unknown')&&!reason.includes('timeout'))this.experience.observe(a.key,outcome,reason);
++  this.quantumProgress.localSucceeded=success;
++  if(!success){
++   const audit=this.decisions.slice(a.decisionStart).filter(x=>x.packet.level==='child').at(-1)??null;
++   const kind:FailureKind=external?'external_change':interrupted||this.cancelled?'infrastructure':decisionBlocked?'decision_blocked':reason.includes('no_local')||reason.includes('phases_exhausted')?'structure_gap':'execution_failed';
++   const failure=this.recovery.record({kind,reason,runId:a.runId,skillId:a.spec.id,skillVersion:a.spec.version,
++    structureId:structureId(a.spec),structure:canonicalSkill(a.spec),family:skillFamily(a.spec),
++    scope:recoveryScope(s,a.call.binding,this.controllerKey()),spec:a.spec,binding:a.call.binding,
++    phase:{index:a.domain.frame.phase,rule:a.spec.phases[a.domain.frame.phase]?.rule??'done'},
++    world:{startRevision:String(a.start.revision),revision:String(s.revision),turn:s.turn,key:exactWorldKey(s)},
++    outcome:{steps:outcome.steps,energyDelta:outcome.energyDelta,deliveredDelta:s.delivered-a.start.delivered,dispatchCompleted:!interrupted},
++    decision:audit,controller:this.controllerKey(),contextVersion:TASK_CONTEXT_VERSION,
++    route:kind==='decision_blocked'?'pause-and-inspect':kind==='infrastructure'?'reconcile-execution':kind==='external_change'?'reobserve':'repair-skill'});
++   this.quantumProgress.informationNovel=failure.informationNovel;
++   this.emit('execution_failure_recorded',failure);
++   if(kind==='decision_blocked'){
++    this.pendingHalt={reason,evidence:{failureId:failure.id,kind,skillId:a.spec.id,structureId:failure.structureId,phase:failure.phase,
++     actualSteps:outcome.steps,contextVersion:TASK_CONTEXT_VERSION,nextAction:'Inspect the packet and abstention; fork an explicit trial after changing evidence or controller. No automatic skill regeneration.'}};
++    this.emit('decision_blocked',this.pendingHalt);
++   }
++   if(!external&&!interrupted&&!this.cancelled)this.denied.add(this.denialKey(s,a.call));
++  }
+   this.lease.release(a.runId);this.active=null;this.emit('skill_summary',summary);
+  }
+  async step():Promise<StepResult>{
+@@ -303,10 +380,10 @@
+  get finished(){return this.terminated;}
+  cancel(){this.cancelled=true;this.rootEngine.cancel();this.active?.engine.cancel();if(!this.busy)this.finishChild(false,'cancelled',true);}
+  edit(tool:EditTool,p:Point){const result=this.world.edit(tool,p);if(result.ok){this.interventions.push({at:Date.now(),tool,point:structuredClone(p),after:this.world.snapshot(),message:result.message});this.emit('external_intervention',{tool,point:p});}return result;}
+- export():ReturnType<GameSession['export']>&{decisionAudit:{schema:'gs/decision-audit/v1';records:DecisionAudit[];orderSeed:number;referenceValidation:'authored-controller-only';judgmentRuns:ScheduleReport[]},hierarchy:{summaries:SkillSummary[];active:unknown;catalogue:ReturnType<ReactiveCatalogue['export']>;experience:ReturnType<ExperienceTable['export']>;budget:ReturnType<RootBudget['snapshot']>;providers:unknown[]}}{
++ export():ReturnType<GameSession['export']>&{decisionAudit:{schema:'gs/decision-audit/v1';records:DecisionAudit[];orderSeed:number;referenceValidation:'authored-controller-only';judgmentRuns:ScheduleReport[]},hierarchy:{summaries:SkillSummary[];active:unknown;catalogue:ReturnType<ReactiveCatalogue['export']>;experience:ReturnType<ExperienceTable['export']>;budget:ReturnType<RootBudget['snapshot']>;providers:unknown[];recovery:ReturnType<SkillSession['diagnostics']>;failures:ExecutionFailure[]}}{
+   return {format:'tuanzi-gs-trace/v3',createdAt:new Date().toISOString(),mode:this.mode,note:'One-level real GSEngine hierarchy; authored primitive rules + bounded grammar composition. Live performance only when explicitly configured.',
+    initialWorld:this.initial,initialPolicy:this.initialPolicy,finalWorld:this.world.snapshot(),policy:this.engine.currentPolicy,counters:this.engine.counters,planning:structuredClone(this.planning),usage:this.providerReports.map(x=>x.usage).filter(Boolean),rejectedUsage:this.events.filter(e=>e.type==='proposal_rejected').map(e=>(e.data as {usage?:unknown}).usage).filter(Boolean),result:this.lastResult??null,events:this.events,interventions:this.interventions,
+-   decisionAudit:{schema:'gs/decision-audit/v1',records:structuredClone(this.decisions),orderSeed:this.options.orderSeed??731,referenceValidation:'authored-controller-only',judgmentRuns:structuredClone(this.judgmentRuns)},hierarchy:{summaries:structuredClone(this.summaries),active:this.active?{runId:this.active.runId,spec:this.active.spec,binding:this.active.call.binding,phase:this.active.domain.frame.phase}:null,catalogue:this.catalogue.export(),experience:this.experience.export(),budget:this.budget.snapshot(),providers:structuredClone(this.providerReports)}};
++   decisionAudit:{schema:'gs/decision-audit/v1',records:structuredClone(this.decisions),orderSeed:this.options.orderSeed??731,referenceValidation:'authored-controller-only',judgmentRuns:structuredClone(this.judgmentRuns)},hierarchy:{summaries:structuredClone(this.summaries),active:this.active?{runId:this.active.runId,spec:this.active.spec,binding:this.active.call.binding,phase:this.active.domain.frame.phase}:null,catalogue:this.catalogue.export(),experience:this.experience.export(),budget:this.budget.snapshot(),providers:structuredClone(this.providerReports),recovery:this.diagnostics(),failures:this.recovery.list()}};
+  }
+ }
+ function judgment<A extends Json>(cs:readonly Candidate<A>[],id:string|null):Judgment{
+--- a/tests/decision031.test.mjs
++++ b/tests/decision031.test.mjs
+@@ -19,7 +19,7 @@
+ test('031 each child score can be reproduced from public facts alone',async()=>{const s=await done(new SkillSession(createWorld('meadow')));for(const r of s.decisions.filter(x=>x.packet.level==='child')){const scores=r.packet.candidates.map(c=>({id:c.id,v:primitiveRule(c.facts,r.packet.preferences)})).sort((a,b)=>b.v-a.v||a.id.localeCompare(b.id));assert.equal(r.choice,scores[0].id);}});
+ test('031 stable facts fingerprints change on changed evidence',async()=>{const a=new SkillSession(createWorld('meadow'));await a.step();const w=createWorld('meadow');w.energy--;const b=new SkillSession(w);await b.step();assert.notEqual(a.decisions[0].packet.id,b.decisions[0].packet.id);});
+ test('031 reference simulation labels its controller and does not certify models',()=>{const s=createWorld('guarded'),spec=makeSkill('access-open',['place-resource','wait-access']);const v=simulateSkill(spec,s,{targetId:s.guards[0].id,targetBerryIds:s.berries.map(b=>b.id),amount:0});assert(v.success);assert.equal(v.validationScope,'authored-reference-controller-only');assert.equal(v.controllerVersion,'rules/v031');});
+-test('031 actual summary is bound to selector and fact/question versions',async()=>{const seen=[];const s=await done(new SkillSession(createWorld('meadow'),'reactive-jev',undefined,{providers:fake(seen)}));assert(s.summaries.length);for(const r of s.summaries){assert.equal(r.validationScope,'actual-controller-run');assert(r.selectorIdentity.includes('packet-only-test')||r.selectorIdentity==='authored-rules/v031');assert.equal(r.factsVersion,'gs/decision-facts/v1');assert.equal(r.questionVersion,'gs/select/v031');}});
++test('031 actual summary is bound to selector and fact/question versions',async()=>{const seen=[];const s=await done(new SkillSession(createWorld('meadow'),'reactive-jev',undefined,{providers:fake(seen)}));assert(s.summaries.length);for(const r of s.summaries){assert.equal(r.validationScope,'actual-controller-run');assert(r.selectorIdentity.includes('packet-only-test')||r.selectorIdentity==='authored-rules/v031');assert.equal(r.factsVersion,'gs/decision-facts/v1');assert.equal(r.questionVersion,'gs/select/v042');}});
+ test('031 deterministic scheduling is not counted as a provider request',async()=>{const s=await done(new SkillSession(createWorld('meadow')));assert(s.events.some(e=>e.type==='decision_origin'));assert.equal(s.planning.providerS,0);assert(s.decisions.every(x=>x.externalRequests===0));});
+ test('031 provider exception is recorded and never becomes a rule success',async()=>{const s=new SkillSession(createWorld('meadow'),'reactive-jev',undefined,{providers:{select:async()=>{throw Error('fixture failure')}}});await s.step();assert.equal(s.decisions[0].status,'error');assert(s.decisions[0].error.includes('fixture failure'));assert.equal(s.world.snapshot().turn,0);});
+ test('031 bridge rejects packet/visible evidence mismatch before provider call',async()=>{const s=new SkillSession(createWorld('meadow'));await s.step();const p=s.decisions[0].packet;let count=0;await assert.rejects(reactiveRequest('reactive-select',{level:p.level,goal:p.goal,projection:{wrong:true},candidates:p.candidates,packet:p},{signal:new AbortController().signal,charge:()=>count++,env:{},fetcher:()=>{throw Error('must not call')}}),/mismatch/);assert.equal(count,0);});
+--- /dev/null
++++ b/tests/incident042-http.test.mjs
+@@ -0,0 +1,35 @@
++import test from 'node:test';import assert from 'node:assert/strict';import http from 'node:http';import os from 'node:os';import fs from 'node:fs';import path from 'node:path';
++import {promisify} from 'node:util';import {execFile} from 'node:child_process';
++import {ExperimentManager} from '../dist/src/lab/manager.js';import {createLabHandler} from '../server/lab/http.mjs';
++import {access} from '../scripts/lib/incident-fixtures.mjs';
++const exec=promisify(execFile),actor={id:'agent:incident-042',kind:'agent',label:'离线弃权测试，不是真实模型'};
++async function fixture(t){
++ const inputs=[];const providers={ready:()=>true,backend:()=>({id:'OFFLINE-MOCK-child-abstains',kind:'mock',ask:async i=>{
++  inputs.push(structuredClone(i));const p=i.state.evidence.packet,q=i.questions.choose;assert.equal(q.type,'choice');let chosen='none';
++  if(p.level==='parent'){const n=p.candidates.findIndex(c=>c.facts.contract==='access-open');if(n>=0)chosen='a'+n;}
++  return {answers:{choose:{type:'choice',choice:chosen,confidence:1,probabilities:Object.fromEntries(Object.keys(q.criteria).map(k=>[k,k===chosen?1:0]))}},model:'OFFLINE-MOCK'};
++ }}),generate:async()=>({output:access()})};
++ const manager=new ExperimentManager(providers),token='local-test-token',dir=fs.mkdtempSync(path.join(os.tmpdir(),'gs-042-'));let handler;
++ const server=http.createServer(async(req,res)=>{if(req.url==='/api/status'){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({token,jevReady:true,llmReady:true}));return;}if(!await handler(req,res,new URL(req.url,'http://127.0.0.1'))){res.writeHead(404);res.end();}});
++ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;handler=createLabHandler({manager,token,baseUrl:base,archiveDir:dir});
++ t.after(async()=>{manager.close();server.closeAllConnections();await new Promise(r=>server.close(r));fs.rmSync(dir,{recursive:true,force:true});});
++ const api=async(p,b)=>{const r=await fetch(base+p,{method:b?'POST':'GET',headers:{'x-gs-token':token,...(b?{'content-type':'application/json'}:{})},...(b?{body:JSON.stringify(b)}:{})});return {status:r.status,data:await r.json()};};
++ const create=async()=> (await api('/api/lab/runs',{requestId:crypto.randomUUID(),actor,config:{kind:'game',scenario:'guarded',strategy:'direct',backend:'jev',generator:'llm',allowLive:true,maxRequests:80,deadlineMs:600000}})).data;
++ const cmd=(s,action)=>api(`/api/lab/runs/${s.runId}/commands`,{commandId:crypto.randomUUID(),expectedControlVersion:s.controlVersion,actor,action});
++ async function run(){let s=await create();for(let k=0;k<10;k++){const r=await cmd(s,'step');assert.equal(r.status,200);s=r.data.state;if(['blocked','stopped','fault','succeeded'].includes(s.status))return s;}throw Error('not terminal');}
++ return {manager,inputs,api,base,token,create,cmd,run};
++}
++test('042 CLI/HTTP shared run returns exact blockage instead of repair budget exhaustion',async t=>{const f=await fixture(t),s=await f.run();assert.equal(s.status,'blocked');assert.equal(s.reason,'decision_blocked:no_local_suitable_action');assert.equal(s.physicalActions,0);assert.equal(s.requests,4);assert.equal(s.diagnostics.budgets.repairs.used,1);assert.equal(s.diagnostics.budgets.repairs.limit,3);assert.equal(s.diagnostics.latestFailure.outcome.steps,0);});
++test('042 hosted adapter actually transmits enriched evidence and new question version',async t=>{const f=await fixture(t);await f.run();const child=f.inputs.find(i=>i.state.evidence.packet.level==='child');assert.equal(child.state.evidence.packet.taskContext.immediateObjective.targetRole,'resource-placement-stand');assert.equal(child.questions.choose.instructions.taskContextRef,'evidence.packet.taskContext');});
++test('042 shared export persists failure packet, response and two strategy axes',async t=>{const f=await fixture(t),s=await f.run(),e=(await f.api(`/api/lab/runs/${s.runId}/export`)).data;assert.equal(e.version,'0.4.2');assert.equal(e.trace.hierarchy.failures[0].decision.judgment.choice,null);assert.equal(e.trace.decisionAudit.judgmentRuns.at(-1).questionStrategy,'direct');assert.equal(e.trace.decisionAudit.judgmentRuns.at(-1).dispatchStrategy,'batch');assert(!JSON.stringify(e).includes(f.token));});
++test('042 blocked run cannot be silently restarted with fresh repair budget',async t=>{const f=await fixture(t),s=await f.run();const r=await f.cmd(s,'start');assert.equal(r.status,409);assert.equal(r.data.error.code,'RUN_TERMINAL');assert.equal(f.manager.get(s.runId).view().requests,s.requests);});
++test('042 repeated status/result reads never schedule another generation',async t=>{const f=await fixture(t),s=await f.run();for(let i=0;i<3;i++){const r=(await f.api(`/api/lab/runs/${s.runId}/result`)).data;assert.equal(r.complete,true);assert.equal(r.state.requests,4);}assert.equal(f.inputs.length,3);});
++test('042 CLI consumes diagnostics from same HTTP run with structured cause',async t=>{const f=await fixture(t),s=await f.run();const out=JSON.parse((await exec(process.execPath,['bin/gs-lab.mjs','result',s.runId,'--url',f.base],{timeout:5000})).stdout);assert.equal(out.state.reason,s.reason);assert.equal(out.state.diagnostics.latestFailure.id,s.diagnostics.latestFailure.id);});
++test('042 phase and failure evidence travels over real SSE',async t=>{const f=await fixture(t),s=await f.run();const res=await fetch(f.base+`/api/lab/runs/${s.runId}/stream?after=0`,{headers:{'x-gs-token':f.token},signal:AbortSignal.timeout(5000)});assert.match(res.headers.get('content-type'),/event-stream/);const rd=res.body.getReader();let text='';for(let k=0;k<100;k++){const {value,done}=await rd.read();if(done)break;text+=new TextDecoder().decode(value);if(text.includes('"status":"blocked"'))break;}await rd.cancel();assert(text.includes('decision_blocked:no_local_suitable_action'));assert(text.includes('gs/skill-task-context/v042'));});
++test('042 frozen child probe defaults to NOT_RUN, even with environment keys present',async()=>{
++ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'gs-probe-'));try{const out=path.join(dir,'probe.json');const r=await exec(process.execPath,['scripts/probe-child-v042.mjs','--out='+out],{env:{...process.env,TYPESAFE_API_KEY:'TEST-ONLY-DO-NOT-CONTACT'},timeout:10000});
++ assert.equal(JSON.parse(r.stdout).status,'NOT_RUN');const p=JSON.parse(fs.readFileSync(out));assert.equal(p.externalRequests,0);assert.equal(p.samples.length,0);assert(p.packet.taskContext);assert(!JSON.stringify(p).includes('TEST-ONLY-DO-NOT-CONTACT'));}finally{fs.rmSync(dir,{recursive:true,force:true});}
++});
++test('042 frozen probe requires an explicit live request budget before network use',async()=>{
++ await assert.rejects(exec(process.execPath,['scripts/probe-child-v042.mjs','--live','--max-requests=0'],{timeout:5000}),e=>e.code!==0&&e.stderr.includes('explicit'));
++});
+--- /dev/null
++++ b/tests/incident042.test.mjs
+@@ -0,0 +1,155 @@
++import test from 'node:test';import assert from 'node:assert/strict';
++import {fixture,access,answer,finish,signal} from '../scripts/lib/incident-fixtures.mjs';
++import {SkillSession} from '../dist/src/skills/runtime.js';
++import {createWorld} from '../dist/src/game/world.js';
++import {selectPacket} from '../dist/src/skills/facts.js';
++import {makeSkill} from '../dist/src/skills/spec.js';
++import {RecoveryJournal,canonicalSkill,skillFamily,structureId,recoveryScope} from '../dist/src/skills/recovery.js';
++import {TASK_CONTEXT_VERSION,skillTaskContext} from '../dist/src/skills/context.js';
++import {createFrame,candidates,simulateSkill} from '../dist/src/skills/behavior.js';
++import {evaluatePacket,compileDecision,ruleBackend} from '../dist/src/decision/pipeline.js';
++import {RepairBlocked,ProposalRejected} from '../dist/vendor/gs-engine-ts/src/rejection.js';
++import {reactiveRequest} from '../server/reactive.mjs';
++const binding=s=>({targetId:s.guards[0].id,targetBerryIds:s.berries.map(b=>b.id),amount:0});
++const zeroFailure=(spec,s,controller='test-controller')=>({kind:'execution_failed',reason:'no_local_action',runId:'test',skillId:spec.id,skillVersion:spec.version,structureId:structureId(spec),structure:canonicalSkill(spec),family:skillFamily(spec),scope:recoveryScope(s,binding(s),controller),spec,binding:binding(s),phase:{index:0,rule:'place-resource'},world:{startRevision:'1',revision:'1',turn:0,key:'unit-fixture'},outcome:{steps:0,energyDelta:0,deliveredDelta:0,dispatchCompleted:true},decision:null,controller,contextVersion:TASK_CONTEXT_VERSION,route:'repair-skill'});
++
++test('042 reported none loop stops after ONE skill generation; no physical fallback',async()=>{
++ const {session:s,stats}=fixture();await finish(s);
++ assert.deepEqual(s.lastResult,{kind:'paused',reason:'decision_blocked:no_local_suitable_action'});
++ assert.equal(stats.generates,1);assert.equal(stats.selects,3);assert.equal(s.world.snapshot().turn,0);assert.equal(s.world.snapshot().revision,1);
++ assert.equal(s.world.snapshot().energy,98);assert.equal(s.lease.activeOwner,null);assert.equal(stats.actualExternalRequests,0);
++ assert.equal(s.rootEngine.counters.repairs,1);assert(s.events.some(e=>e.type==='post_transition_route'));
++});
++test('042 blocked summary is not a measured physical skill failure or success',async()=>{
++ const {session:s}=fixture();await finish(s);const r=s.summaries[0];assert.equal(r.status,'decision_blocked');assert.equal(r.outcome.steps,0);
++ assert.equal(s.catalogue.list()[0].successes,0);assert.equal(s.catalogue.list()[0].failures,0);assert.equal(s.experience.list().length,0);
++ assert.equal(s.recovery.latest().kind,'decision_blocked');assert.equal(s.recovery.latest().route,'pause-and-inspect');
++});
++test('042 dispatch completion does NOT refresh task progress on zero-step abstention',async()=>{
++ const {session:s}=fixture();await finish(s);const last=s.rootEngine.history.at(-1).feedback;
++ assert.equal(last.progress,false);assert.equal(last.actionSucceeded,false);assert.equal(last.metrics.dispatchCompleted,1);
++ assert.equal(last.metrics.physicalProgress,0);assert.equal(last.metrics.localGoalProgress,0);assert.equal(last.metrics.informationProgress,1);
++});
++test('042 measured decision, candidates, stage and controller retained in failure envelope',async()=>{
++ const {session:s}=fixture();await finish(s);const r=s.recovery.latest();assert.equal(r.decision.judgment.choice,null);
++ assert.equal(r.decision.judgment.abstainProbability,1);assert.equal(r.decision.packet.candidates.length,4);
++ assert.equal(r.phase.rule,'place-resource');assert(r.controller.includes('fixture'));assert.equal(r.decision.packet.questionVersion,'gs/select/v042');
++ assert.equal(s.export().hierarchy.failures.length,1);assert.equal(s.diagnostics().pendingHalt.reason,s.lastResult.reason);
++});
++test('042 child context explains current stand target and why move is useful before drop',async()=>{
++ const {session:s,stats}=fixture();await finish(s);const p=stats.packets.find(x=>x.level==='child'),c=p.taskContext;
++ assert.notEqual(p.goal,'access-open');assert.equal(c.schema,TASK_CONTEXT_VERSION);assert.equal(c.localGoal.id,'access-open');
++ assert.equal(c.phase.rule,'place-resource');assert.equal(c.immediateObjective.targetRole,'resource-placement-stand');
++ assert.deepEqual(c.relations.placement.stand,{x:8,y:6});assert.deepEqual(c.relations.placement.drop,{x:8,y:7});
++ assert.equal(c.immediateObjective.pathSteps,1);assert.equal(c.immediateObjective.atTarget,false);
++ assert(c.immediateObjective.description.includes('本步不需要'));assert(p.candidates.every(x=>x.action.kind==='move'));
++ assert(!JSON.stringify(p).match(/bestAction|recommendedAction|"score":|oracleAnswer/));
++});
++test('042 same factual context is delivered to rule and test provider; no answer injected',async()=>{
++ const a=new SkillSession(createWorld('guarded'),'reactive',undefined,{initialSkills:[access()]});await a.step();
++ const b=fixture('context-gated-rule',{initialSkills:[access()]});await b.session.step();
++ const pa=a.decisions.find(x=>x.packet.level==='child').packet,pb=b.stats.packets.find(x=>x.level==='child');
++ assert.deepEqual(pa.taskContext,pb.taskContext);assert.deepEqual(pa.candidates,pb.candidates);
++ a.cancel();b.session.cancel();
++});
++test('042 context-consuming TEST rule executes full task; not evidence of Jev improvement',async()=>{
++ const {session:s,stats}=fixture('context-gated-rule');await finish(s);assert.equal(s.lastResult.outcome,'succeeded');assert.equal(stats.generates,1);
++ assert(s.world.snapshot().energy>0);assert(s.world.snapshot().delivered>=5);assert.equal(stats.actualExternalRequests,0);
++});
++test('042 parent rejection of an already available access skill does not regenerate',async()=>{
++ const {session:s,stats}=fixture('abstain-parent');await finish(s);assert.equal(stats.generates,1);assert.equal(stats.selects,2);
++ assert.equal(s.lastResult.reason,'decision_blocked:parent_no_suitable_skill');assert.equal(s.summaries.length,0);assert.equal(s.world.snapshot().turn,0);
++});
++test('042 existing skill + parent none pauses without any generator invocation',async()=>{
++ const {session:s,stats}=fixture('abstain-parent',{initialSkills:[access()]});await finish(s);assert.equal(stats.generates,0);assert.equal(s.lastResult.kind,'paused');
++});
++test('042 failed finite skill feeds measured execution into NEXT generator request',async()=>{
++ const bad={...makeSkill('access-open',['wait-access'],'llm'),id:'bad-wait',maxSteps:2};let input;
++ const s=new SkillSession(createWorld('guarded'),'reactive-live',undefined,{initialSkills:[bad],providers:{generate:async x=>{input=structuredClone(x);return {output:{...bad,id:'renamed-identical'}};}}});
++ await finish(s);assert.equal(s.lastResult.reason,'duplicate_repair_no_new_evidence');
++ assert.equal(input.executionFeedback.latest.skillId,'bad-wait');assert.equal(input.executionFeedback.latest.outcome.steps,2);
++ assert.equal(input.executionFeedback.latest.reason,'skill_step_budget');assert.equal(input.feedback,undefined);
++ assert.equal(s.world.snapshot().turn,2);assert.equal(s.rootEngine.counters.repairs,1);assert(s.events.some(x=>x.type==='duplicate_repair_blocked'));
++});
++test('042 genuinely different repair can proceed using failure feedback',async()=>{
++ const bad={...makeSkill('access-open',['wait-access'],'llm'),id:'bad-wait',maxSteps:2};let inputs=[];
++ const s=new SkillSession(createWorld('guarded'),'reactive-live',undefined,{initialSkills:[bad],providers:{generate:async x=>{inputs.push(structuredClone(x));return {output:access()};}}});
++ await finish(s);assert.equal(inputs.length,1);assert.equal(inputs[0].executionFeedback.latest.reason,'skill_step_budget');
++ assert.equal(s.lastResult.outcome,'succeeded');assert(s.summaries.some(x=>x.status==='failed'));assert(s.summaries.some(x=>x.status==='success'));
++});
++test('042 validation rejection feedback and execution feedback survive together',async()=>{
++ const bad={...makeSkill('access-open',['wait-access'],'llm'),id:'bad-wait',maxSteps:2};const inputs=[];
++ const s=new SkillSession(createWorld('guarded'),'reactive-live',undefined,{initialSkills:[bad],providers:{generate:async x=>{
++  inputs.push(structuredClone(x));return {output:inputs.length===1?{...access(),eval:'forbidden'}:access()};}}});
++ await finish(s);assert.equal(inputs.length,2);assert.equal(inputs[0].feedback,undefined);assert(inputs[1].feedback.rejection);
++ assert.deepEqual(inputs[0].executionFeedback,inputs[1].executionFeedback);assert.equal(s.lastResult.outcome,'succeeded');
++});
++test('042 ID/title/source/version and phase labels do not change executable identity',()=>{
++ const a=access(),b={...a,id:'rename',title:'different',source:'grammar-search',version:99,phases:a.phases.map((p,i)=>({...p,id:'label-'+i})),capabilities:[...a.capabilities].reverse(),features:[...a.features].reverse()};
++ assert.equal(canonicalSkill(a),canonicalSkill(b));assert.equal(structureId(a),structureId(b));
++});
++test('042 behavior weights and budgets DO change full signature; family protects zero-step repeats',()=>{
++ const a=access(),b={...a,id:'rename',maxSteps:a.maxSteps-1,weights:{...a.weights,cost:2}};
++ assert.notEqual(canonicalSkill(a),canonicalSkill(b));assert.equal(skillFamily(a),skillFamily(b));
++ const s=createWorld('guarded'),j=new RecoveryJournal();j.record(zeroFailure(a,s));assert(j.repeated(b,recoveryScope(s,binding(s),'test-controller')));
++});
++test('042 different rules change family and are not globally blacklisted',()=>{
++ const a=access(),b=makeSkill('access-open',['wait-access']),s=createWorld('guarded'),j=new RecoveryJournal();j.record(zeroFailure(a,s));
++ assert.notEqual(skillFamily(a),skillFamily(b));assert.equal(j.repeated(b,recoveryScope(s,binding(s),'test-controller')),null);
++});
++test('042 changed world or controller scope allows an explicit new assessment',()=>{
++ const a=access(),s=createWorld('guarded'),j=new RecoveryJournal();j.record(zeroFailure(a,s));const next=structuredClone(s);next.energy--;
++ assert.equal(j.repeated(a,recoveryScope(next,binding(next),'test-controller')),null);
++ assert.equal(j.repeated(a,recoveryScope(s,binding(s),'new-controller')),null);
++});
++test('042 repeated identical failure is not repeatedly counted as new information',()=>{
++ const a=access(),s=createWorld('guarded'),j=new RecoveryJournal(),f=zeroFailure(a,s);
++ assert.equal(j.record(f).informationNovel,true);assert.equal(j.record({...f,skillId:'new-name',runId:'new-run'}).informationNovel,false);
++});
++test('042 canonical rejection returns typed non-retryable block with evidence',()=>{
++ const s=new SkillSession(createWorld('guarded')),a=access();s.recovery.record(zeroFailure(a,s.world.snapshot(),s.controllerKey()));
++ assert.throws(()=>s.assertNovel({...a,id:'different-id'},s.world.snapshot(),binding(s.world.snapshot())),e=>e instanceof RepairBlocked&&e.reason==='duplicate_repair_no_new_evidence');
++ assert.equal(s.rootEngine.counters.repairs,0);s.cancel();
++});
++test('042 direct none remains abstention even when runner-up has probability 0.34',async()=>{
++ const {session:s,stats}=fixture();await finish(s);const p=stats.packets.find(x=>x.level==='child');
++ const backend={id:'reported-distribution-test',kind:'mock',ask:async input=>{const q=input.questions.choose;const probs={none:.58};for(let i=0;i<p.candidates.length;i++){const a=p.candidates[i].action;probs['a'+i]=a.x===8&&a.y===6?.34:a.x===8&&a.y===8?.05:a.x===7?.02:.01;}return {answers:{choose:{type:'choice',choice:'none',confidence:.58,probabilities:probs}}};}};
++ const r=await evaluatePacket(p,'direct',backend,{signal:signal(),currentKey:()=>p.id,timeoutMs:1000,maxRequests:3,maxQuestions:20});
++ assert.equal(r.judgment.choice,null);assert(Object.values(r.judgment.suitability).every(v=>v===0));
++ assert.equal(r.report.questionStrategy,'direct');assert.equal(r.report.dispatchStrategy,'batch');assert.equal(r.report.questions,1);
++});
++test('042 all four question forms carry stage context and version',async()=>{
++ const {session:s,stats}=fixture();await finish(s);const p=stats.packets.find(x=>x.level==='child');
++ for(const mode of ['direct','batch','serial','dependent']){const g=compileDecision(p,mode);assert.equal(g.questionVersion,'gs/judgments/v042/'+mode);assert.deepEqual(g.evidence.packet.taskContext,p.taskContext);for(const t of g.tasks)assert.equal(t.question.instructions.taskContextRef,'evidence.packet.taskContext');
++ const r=await evaluatePacket(p,mode,ruleBackend(),{signal:signal(),currentKey:()=>p.id,timeoutMs:1000,maxRequests:30,maxQuestions:40});assert.equal(r.report.questionStrategy,mode);assert.equal(r.report.dispatchStrategy,mode==='serial'?'serial':'batch');}
++});
++test('042 failed graph still labels question organisation separately from request dispatch',async()=>{
++ const {session:s,stats}=fixture();await finish(s);const p=stats.packets.find(x=>x.level==='child');
++ await assert.rejects(evaluatePacket(p,'dependent',{id:'bad',kind:'mock',ask:async()=>({answers:{}})},{signal:signal(),currentKey:()=>p.id,timeoutMs:1000,maxRequests:30,maxQuestions:40}),e=>e.report.questionStrategy==='dependent'&&e.report.dispatchStrategy==='batch');
++});
++test('042 context target rebinds in mirrored world instead of inventing directions',()=>{
++ for(const id of ['guarded','remix']){const s=createWorld(id),spec=access(),f=createFrame(s,binding(s));candidates(spec,f,s);const ctx=skillTaskContext(spec,f,s);assert.deepEqual(ctx.immediateObjective.target,f.placement.stand);assert.equal(ctx.snapshotRevision,String(s.revision));}
++});
++test('042 stale none is discarded before arbitration, never logged as skill impossibility',async()=>{
++ let s;let edited=false;const providers={identity:'stale-none-test',source:'test-provider',select:async i=>{
++ if(i.level==='child'&&!edited){edited=true;s.edit('wall',{x:0,y:0});return {output:answer(i.candidates,null)};}
++ return {output:answer(i.candidates,selectPacket(i.packet))};}};
++ s=new SkillSession(createWorld('guarded'),'reactive-jev',undefined,{initialSkills:[access()],providers});
++ await s.step();assert.equal(s.recovery.latest(),null);assert.equal(s.finished,false);assert.equal(s.world.snapshot().turn,0);
++ assert(s.events.some(e=>e.type==='stale_result_discarded'));s.cancel();
++});
++test('042 model error never silently switches to a rule or generator',async()=>{
++ const {session:s,stats}=fixture('abstain-child',{initialSkills:[access()],providers:{identity:'fault-test',source:'test-provider',select:async()=>{throw Error('provider offline');},generate:async()=>{assert.fail('no fallback generation');}}});
++ await finish(s);assert.equal(s.lastResult.kind,'fault');assert.equal(s.world.snapshot().turn,0);assert.equal(s.recovery.latest(),null);
++});
++test('042 LLM wire input includes execution and validation evidence as separate fields',async()=>{
++ const state=createWorld('guarded');let body;const executionFeedback={schema:'test',latest:{reason:'decision_blocked',steps:0}};
++ await reactiveRequest('reactive-plan',{state,binding:binding(state),feedback:{rejection:'test-schema'},executionFeedback},{signal:signal(),env:{LLM_URL:'http://127.0.0.1/test',LLM_MODEL:'fixture',LLM_API_KEY:'never-in-input'},charge:()=>{},fetcher:async(_u,o)=>{body=JSON.parse(o.body);return new Response(JSON.stringify({model:'mock',choices:[{message:{content:JSON.stringify(access())}}]}));}});
++ const sent=JSON.parse(body.messages[1].content);assert.deepEqual(sent.executionFeedback,executionFeedback);assert.equal(sent.validationFeedback.rejection,'test-schema');assert(!body.messages[1].content.includes('never-in-input'));
++});
++test('042 new feedback/context scope does not consume legacy ambiguous failure aggregates',async()=>{
++ const {experienceKey,ExperienceTable}=await import('../dist/src/skills/experience.js');const s=createWorld('guarded'),spec=access(),key=experienceKey(s,spec);
++ assert(key.includes('gs/skill-feedback/v042'));assert(key.includes(TASK_CONTEXT_VERSION));const old=JSON.stringify(JSON.parse(key).slice(2)),book=new ExperienceTable('use');
++ book.observe(old,{success:false,steps:0,energyDelta:0,attacks:0,providerCalls:0,searchNodes:0},'legacy-none');book.observe(old,{success:false,steps:0,energyDelta:0,attacks:0,providerCalls:0,searchNodes:0},'legacy-none');
++ assert.equal(book.preference(key,spec.weights),0);assert.equal(book.list().length,1);
++});
+--- a/tests/judgment04.test.mjs
++++ b/tests/judgment04.test.mjs
+@@ -41,5 +41,5 @@
+ test('04 single physical candidate bypasses unnecessary task requests',async()=>{const a=await done(new SkillSession(createWorld('meadow')));const p=structuredClone(a.decisions.find(x=>x.packet.level==='child').packet);p.candidates=p.candidates.slice(0,1);let called=0;const s=new SkillSession(createWorld('meadow'),'reactive',undefined,{decision:{strategy:'batch',backend:fake(async()=>{called++;throw Error('unexpected call');})}});await s.decide(p,createWorld('meadow'),p.candidates.map(c=>({...c,capability:'fixture'})),sig());assert.equal(called,0);assert.equal(s.decisions[0].source,'deterministic-single');assert.equal(s.planning.providerS,0);});
+ test('04 compile direct and decomposed approaches share same evidence envelope',async()=>{const s=new SkillSession(createWorld('meadow'));await s.step();const p=s.decisions[0].packet;assert.deepEqual(compileDecision(p,'direct').evidence,compileDecision(p,'batch').evidence);assert.deepEqual(compileDecision(p,'serial').tasks,compileDecision(p,'batch').tasks);});
+ test('04 goal version and question version are independently identified',async()=>{const s=new SkillSession(createWorld('meadow'));await s.step();const p=s.decisions[0].packet,a=compileDecision(p,'direct'),b=compileDecision(p,'batch'),c=compileDecision({...p,goal:'a different immutable objective'},'direct');assert.equal(a.goalVersion,b.goalVersion);assert.notEqual(a.questionVersion,b.questionVersion);assert.notEqual(a.goalVersion,c.goalVersion);});
+-test('04 actual skill evidence uses its executed question-set version',async()=>{const s=await done(new SkillSession(createWorld('meadow'),'reactive',undefined,{decision:{strategy:'dependent',backend:ruleBackend()}}));assert(s.summaries.length>0);assert(s.summaries.some(x=>x.questionVersion.includes('gs/judgments/v04/dependent')));assert(s.decisions.every(x=>x.questions===0||x.packet.questionVersion==='gs/judgments/v04/dependent'));});
++test('04 actual skill evidence uses its executed question-set version',async()=>{const s=await done(new SkillSession(createWorld('meadow'),'reactive',undefined,{decision:{strategy:'dependent',backend:ruleBackend()}}));assert(s.summaries.length>0);assert(s.summaries.some(x=>x.questionVersion.includes('gs/judgments/v042/dependent')));assert(s.decisions.every(x=>x.questions===0||x.packet.questionVersion===(x.packet.taskContext?'gs/judgments/v042/dependent':'gs/judgments/v04/dependent')));});
+ test('04 malformed provider answers retain known usage in failed request ledger',async()=>{try{await runDecisionGraph(graph([n('a')]),fake(async()=>{throw Object.assign(Error('invalid-provider-answer'),{usage:{provider:'mock',model:'wire',inputTokens:11,outputTokens:2}});}),opts());assert.fail();}catch(e){assert.equal(e.report.batches[0].usage.inputTokens,11);assert.equal(e.report.batches[0].status,'invalid');}});
+--- a/vendor/gs-engine-ts/README.md
++++ b/vendor/gs-engine-ts/README.md
+@@ -141,3 +141,12 @@
+ - Node AbortSignal: https://nodejs.org/api/globals.html
+ 
+ 这些文档用于协议核对，不构成对 G/S 质量、速度或成本收益的实验证明。
++
++
++## v0.4.2 additive recovery hooks
++
++`Context.executionFeedback` is measured prior execution evidence, separate from retry-local `repairFeedback`. An optional `Domain.repairContext` supplies trusted, bounded evidence at the repair boundary. An optional `Domain.afterTransition` routes a recorded actual transition to pause/stop when host diagnosis requires it. `RepairBlocked` is an explicit non-retryable recovery stop, not malformed model JSON.
++
++All selector answers, including abstention, are checked against a fresh snapshot before arbitration. The core does not automatically call another model or pick the second-ranked action when a selector abstains. Domain adapters own phase semantics and decide whether a problem is missing skill structure, a judgment block or an execution failure.
++
++DecisionPacket may contain `taskContext`; schedule reports distinguish question organization from dispatch strategy. Old interfaces remain compatible. No production persistence or live-model performance is implied by these additions.
+--- a/vendor/gs-engine-ts/package.json
++++ b/vendor/gs-engine-ts/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "gs-engine-reference",
+-  "version": "0.4.0",
++  "version": "0.4.2",
+   "private": true,
+   "type": "module",
+   "description": "Domain-independent Generate/Select runtime reference. Offline tests, no live-model results claimed.",
+--- a/vendor/gs-engine-ts/src/decision.ts
++++ b/vendor/gs-engine-ts/src/decision.ts
+@@ -6,9 +6,9 @@
+ export type FactCandidate = {id:string; description:string; action:Json; facts:Json; evidence?:Json};
+ export type DecisionPacket = {schema:'gs/decision-packet/v1'; id:string; level:'parent'|'child'; goal:string;
+  snapshotRevision:string; policyVersion:number; factsVersion:string; questionVersion:string;
+- scope:{name:string; note:string}; projection:Json; preferences:Json; candidates:FactCandidate[]; orderSeed:number};
++ scope:{name:string; note:string}; taskContext?:Json; projection:Json; preferences:Json; candidates:FactCandidate[]; orderSeed:number};
+ export type DecisionAudit = {packet:DecisionPacket; source:DecisionSource; selectorIdentity:string; choice:string|null;
+- status:'selected'|'abstained'|'error'; latencyMs:number; externalRequests:number; questions:number; error?:string};
++ status:'selected'|'abstained'|'error'; latencyMs:number; externalRequests:number; questions:number; judgment?:import('./types.js').Judgment; error?:string};
+ export function stableJson(value:unknown):string {
+  if(value===null||typeof value!=='object')return JSON.stringify(value);
+  if(Array.isArray(value))return '['+value.map(stableJson).join(',')+']';
+--- a/vendor/gs-engine-ts/src/engine.ts
++++ b/vendor/gs-engine-ts/src/engine.ts
+@@ -2,7 +2,7 @@
+   Arbiter, Candidate, Context, Counters, Domain, EngineEvent, Goal, Journal, Json,
+   Limits, Planner, Policy, Selector, Snapshot, StepResult, Transition
+ } from "./types.js";
+-import { ProposalRejected } from "./rejection.js";
++import { ProposalRejected, RepairBlocked } from "./rejection.js";
+ import { immutable, parseProposal, text, validateJudgment } from "./support.js";
+ 
+ export interface EngineOptions<S extends Json, A extends Json, P extends Json> {
+@@ -119,6 +119,10 @@
+         validateJudgment(answer.output, offered);
+         this.emit("selector_answered", { answer, latencyMs: performance.now() - started,
+           snapshotRevision: snapshot.revision, policyVersion: this.policy.version });
++        // Abstention/repair is also a decision: discard it if its evidence expired in flight.
++        const judgedAgainst = await this.observe(active);
++        if (judgedAgainst.revision !== snapshot.revision || this.policy.version !== ctx.policy.version)
++          return this.stale("before_arbitration");
+         const decision = this.options.arbiter.decide(ctx, offered, answer.output);
+         this.emit("decision", decision);
+         if (decision.kind === "repair") return await this.repair(ctx, decision.reason, active);
+@@ -158,6 +162,8 @@
+ 
+   private async repair(ctx: Context<S, A, P>, reason: string, signal: AbortSignal): Promise<StepResult> {
+     let feedback: Json | undefined;
++    const measured = this.options.domain.repairContext?.(ctx);
++    const executionContext = measured === undefined ? ctx : immutable({ ...ctx, executionFeedback: measured });
+     const attempts = this.limits.maxProposalAttempts ?? 1;
+     for (let attempt = 1; attempt <= attempts; attempt++) {
+       this.checkTime(signal);
+@@ -166,8 +172,8 @@
+       if (this.counts.repairs >= this.limits.maxRepairs) return this.finish("stopped", "repair_budget_exhausted");
+       this.reserveModelCall();
+       this.counts.repairs++;
+-      const requestContext = immutable({ ...ctx, ...(feedback === undefined ? {} : {repairFeedback: feedback}) });
+-      this.emit("repair_requested", { reason, attempt, feedback: feedback ?? null,
++      const requestContext = immutable({ ...executionContext, ...(feedback === undefined ? {} : {repairFeedback: feedback}) });
++      this.emit("repair_requested", { reason, attempt, feedback: feedback ?? null, executionFeedback: measured ?? null,
+         policyVersion: ctx.policy.version, snapshotRevision: before.revision });
+       const started = performance.now();
+       let proposal;
+@@ -188,6 +194,10 @@
+           ...(this.options.domain.validateProposal?.(proposal.body, this.context(after)) ?? [])];
+         if (errors.length) throw new ProposalRejected({reason: "policy_rejected", errors: errors.map(x=>x.slice(0,600)), stage: "validation"});
+       } catch(e) {
++        if (e instanceof RepairBlocked) {
++          this.emit("repair_blocked", { reason: e.reason, evidence: e.evidence, usage: e.usage ?? null, attempt });
++          return this.finish("paused", e.reason);
++        }
+         if (!(e instanceof ProposalRejected)) throw e; // network, cancellation and unknown effects are NOT retryable here
+         const detail: Json = { attempt, rejection: e.feedback,
+           remaining: { modelCalls: this.limits.maxModelCalls-this.counts.modelCalls,
+@@ -243,6 +253,11 @@
+     this.recent = this.recent.slice(-this.limits.historySize);
+     this.noProgress = feedback.progress ? 0 : this.noProgress + 1;
+     this.emit("transition", transition);
++    const route = this.options.domain.afterTransition?.(this.context(after), transition);
++    if (route) {
++      this.emit("post_transition_route", route);
++      return this.finish(route.kind === "pause" ? "paused" : "stopped", route.reason);
++    }
+     const completion = this.options.domain.completion(after, this.goal);
+     if (completion !== "running") return this.done(completion);
+     return { kind: "executed", actionId: candidate.id, feedback };
+--- a/vendor/gs-engine-ts/src/judgment.ts
++++ b/vendor/gs-engine-ts/src/judgment.ts
+@@ -16,7 +16,7 @@
+ export type JudgmentBackend={id:string;kind:'rule'|'mock'|'jev'|'llm';ask(input:BatchInput,signal:AbortSignal):Promise<BatchAnswer>};
+ export type BatchAudit={index:number;taskIds:string[];dependencies:string[];questionCount:number;inputKey:string;
+  requestStartedMs:number;latencyMs:number;status:'returned'|'invalid'|'failed'|'timeout';backend:string;external:boolean;usage:Usage|null;error?:string};
+-export type ScheduleReport={schema:'gs/judgment-run/v1';graphId:string;snapshotKey:string;goalVersion:string;questionVersion:string;
++export type ScheduleReport={questionStrategy?:'direct'|'batch'|'serial'|'dependent';dispatchStrategy?:'batch'|'serial';schema:'gs/judgment-run/v1';graphId:string;snapshotKey:string;goalVersion:string;questionVersion:string;
+  strategy:'batch'|'serial';answers:Record<string,TypedAnswer>;batches:BatchAudit[];status:'complete'|'failed';reason:string|null;
+  elapsedMs:number;questions:number;requestAttempts:number;externalRequests:number;dependencyWaves:number};
+ export type ScheduleOptions={strategy?:'batch'|'serial';maxRequests:number;maxQuestions:number;timeoutMs:number;
+--- a/vendor/gs-engine-ts/src/rejection.ts
++++ b/vendor/gs-engine-ts/src/rejection.ts
+@@ -5,3 +5,10 @@
+     super('proposal_validation_rejected'); this.name = 'ProposalRejected';
+   }
+ }
++
++/** A diagnosed lack of new repair evidence is NOT a retryable schema error. */
++export class RepairBlocked extends Error {
++  constructor(readonly reason: string, readonly evidence: Json, readonly usage?: Usage) {
++    super(reason); this.name = 'RepairBlocked';
++  }
++}
+--- a/vendor/gs-engine-ts/src/types.ts
++++ b/vendor/gs-engine-ts/src/types.ts
+@@ -57,6 +57,8 @@
+   readonly recent: readonly Transition<S, A>[];
+   /** Validator-owned feedback from the immediately preceding rejected proposal. */
+   readonly repairFeedback?: Json;
++  /** Run-local measured execution evidence, distinct from same-call proposal rejection. */
++  readonly executionFeedback?: Json;
+ }
+ export interface ExecuteRequest<A extends Json> {
+   readonly candidate: Candidate<A>;
+@@ -68,6 +70,11 @@
+   observe(signal: AbortSignal): Promise<Snapshot<S>>;
+   /** Optional domain health diagnosis; invoked before selection. No model permission override. */
+   assess?(context: Context<S, A, P>): { kind: "repair" | "pause"; reason: string; evidence: Json } | null;
++  /** Optional measured failure envelope supplied anew at each repair boundary. */
++  repairContext?(context: Context<S, A, P>): Json | undefined;
++  /** Trusted domain control decision AFTER recording a transition; never an action override. */
++  afterTransition?(context: Context<S, A, P>, transition: Transition<S, A>):
++    { kind: "pause" | "stop"; reason: string; evidence: Json } | null;
+   /** Cheap G: bind developer-owned capabilities to the current environment. */
+   enumerate(context: Context<S, A, P>): readonly Candidate<A>[];
+   /** Authoritative hard checks. Never replaced by model confidence. */

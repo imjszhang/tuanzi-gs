@@ -1,0 +1,1 @@
+{"mcpServers":{"gs-lab-audit":{"command":"node","args":["/ABSOLUTE/PATH/tuanzi-gs/bin/gs-lab-mcp.mjs","--profile","audit"]}}}

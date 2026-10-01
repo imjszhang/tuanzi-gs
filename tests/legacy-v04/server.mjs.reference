@@ -1,0 +1,35 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {fileURLToPath} from 'node:url';
+import {createWorld} from '../dist/src/game/world.js';
+import {INITIAL_POLICY,GOAL} from '../dist/src/game/types.js';
+const root=fileURLToPath(new URL('..',import.meta.url));
+let child,mock,port,base,token,mockCalls=0,badProposal=false;
+const fakeKey='TEST-LOCAL-ONLY-DO-NOT-SEND-EXTERNALLY';
+async function unusedPort(){const s=http.createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+function payload(){const state=createWorld('guarded');return {context:{goal:GOAL,snapshot:{revision:String(state.revision),observedAt:Date.now(),state},policy:structuredClone(INITIAL_POLICY),recent:[]},reason:'no_suitable_candidate'};}
+function headers(extra={}){return {'content-type':'application/json',origin:base,'x-gs-token':token,...extra};}
+test.before(async()=>{
+ mock=http.createServer(async(req,res)=>{mockCalls++;const parts=[];for await(const b of req)parts.push(b);const data=JSON.parse(Buffer.concat(parts));assert.equal(req.headers.authorization,`Bearer ${fakeKey}`);assert.equal(data.response_format.type,'json_object');
+  const content=badProposal?{baseVersion:1,basedOnRevision:'1',body:{...INITIAL_POLICY.body,target:0},explanation:'Invalid test proposal'}:
+   {baseVersion:1,basedOnRevision:'1',body:{...INITIAL_POLICY.body,mode:'lure',enabled:['move','pickup','eat','deposit','drop','wait'],subgoal:'测试：使用已有诱饵能力'},explanation:'Mock provider response, not a real LLM result.'};
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({model:'mock-local-model',choices:[{message:{content:JSON.stringify(content)}}],usage:{prompt_tokens:123,completion_tokens:45}}));
+ });mock.listen(0,'127.0.0.1');await once(mock,'listening');
+ port=await unusedPort();base=`http://127.0.0.1:${port}`;
+ child=spawn(process.execPath,['server.mjs'],{cwd:root,env:{...process.env,PORT:String(port),TYPESAFE_API_KEY:'',LLM_API_KEY:fakeKey,LLM_MODEL:'mock-local-model',LLM_URL:`http://127.0.0.1:${mock.address().port}/chat/completions`,LLM_JSON_MODE:'true',MAX_SERVER_CALLS:'2'},stdio:['ignore','pipe','pipe']});
+ let ready=false;for(let i=0;i<60;i++){try{const r=await fetch(base+'/api/status');if(r.ok){token=(await r.json()).token;ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,40));}
+ if(!ready)throw new Error('Local test server did not start');
+});
+test.after(async()=>{child?.kill();if(mock)await new Promise(r=>mock.close(r));});
+test('local server serves assets with browser security headers',async()=>{const r=await fetch(base);assert.equal(r.status,200);assert.match(r.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.match(await r.text(),/app.js/);});
+test('status never exposes the provider key',async()=>{const r=await fetch(base+'/api/status');const text=await r.text();assert.ok(!text.includes(fakeKey));const j=JSON.parse(text);assert.equal(j.jevReady,false);assert.equal(j.llmReady,true);});
+test('configuration and server files are not publicly served',async()=>{for(const file of ['/.env','/server.mjs','/package.json'])assert.equal((await fetch(base+file)).status,404);});
+test('host and origin checks reject untrusted callers',async()=>{const hostileStatus=await new Promise((resolve,reject)=>{http.get(base+'/api/status',{headers:{host:'evil.example'}},r=>{r.resume();resolve(r.statusCode);}).on('error',reject);});assert.equal(hostileStatus,403);assert.equal((await fetch(base+'/api/plan',{method:'POST',headers:headers({origin:'https://evil.example'}),body:JSON.stringify(payload())})).status,403);});
+test('paid endpoints require a same-origin session token',async()=>{assert.equal((await fetch(base+'/api/plan',{method:'POST',headers:headers({'x-gs-token':'wrong'}),body:JSON.stringify(payload())})).status,403);assert.equal(mockCalls,0);});
+test('unconfigured Jev route fails without a silent demo fallback',async()=>{const r=await fetch(base+'/api/select',{method:'POST',headers:headers(),body:JSON.stringify(payload())});assert.equal(r.status,503);assert.equal(mockCalls,0);});
+test('LLM bridge validates a local mocked response and reports real returned usage',async()=>{const r=await fetch(base+'/api/plan',{method:'POST',headers:headers(),body:JSON.stringify(payload())});assert.equal(r.status,200);const result=await r.json();assert.equal(result.output.body.mode,'lure');assert.equal(result.usage.inputTokens,123);assert.equal(result.usage.outputTokens,45);assert.equal(mockCalls,1);});
+test('LLM bridge rejects a proposal that changes unauthorized fields',async()=>{badProposal=true;const r=await fetch(base+'/api/plan',{method:'POST',headers:headers(),body:JSON.stringify(payload())});assert.ok(r.status>=400);assert.equal(mockCalls,2);});
+test('server enforces its provider-call budget before another request',async()=>{const r=await fetch(base+'/api/plan',{method:'POST',headers:headers(),body:JSON.stringify(payload())});assert.equal(r.status,429);assert.equal(mockCalls,2);});

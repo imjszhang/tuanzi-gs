@@ -1,0 +1,117 @@
+/** Versioned control plane. Agents configure experiments; only the tested engine chooses actions. */
+import type { GameState, EditTool, Point } from '../game/types.js';
+import type { Strategy } from '../decision/pipeline.js';
+import type { TaskId } from '../decision/experiment.js';
+import type { ExperienceMode } from '../skills/experience.js';
+export type Actor = {
+    id: string;
+    kind: 'agent' | 'human';
+    label: string;
+};
+export type RunStatus = 'ready' | 'running' | 'stepping' | 'pausing' | 'paused' | 'cancelling' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'stopped' | 'fault';
+export type Intervention = {
+    afterAction: number;
+    tool: Exclude<EditTool, 'inspect'>;
+    point: Point;
+};
+export type LabConfig = {
+    kind: 'judgment' | 'game';
+    task: TaskId;
+    scenario: 'meadow' | 'detour' | 'guarded' | 'remix';
+    controller: 'adaptive' | 'hierarchy' | 'program' | 'rules';
+    strategy: Strategy;
+    backend: 'rule' | 'jev' | 'llm';
+    generator: 'local' | 'llm';
+    experience: ExperienceMode;
+    orderSeed: number;
+    maskResources: boolean;
+    delayMs: number;
+    allowLive: boolean;
+    maxRequests: number;
+    maxQuestions: number;
+    maxActions: number;
+    maxSteps: number;
+    maxSearchNodes: number;
+    deadlineMs: number;
+    interventions: Intervention[];
+    maxGCalls: number;
+    maxDepth: number;
+    maxRevisions: number;
+    maxFormatRepairs: number;
+    jevMaxRetries?: number;
+    jevRetryBaseMs?: number;
+    jevRetryMaxMs?: number;
+    jevAttemptTimeoutMs?: number;
+};
+export type LabEvent = {
+    runId: string;
+    seq: number;
+    at: string;
+    type: string;
+    data: unknown;
+};
+export type LabView = {
+    schema: 'gs/lab-state/v1';
+    version: '0.5.5' | '0.5.4' | '0.5.3' | '0.5.2' | '0.5.1' | '0.5.0' | '0.4.2';
+    runId: string;
+    viewerPath: string;
+    config: LabConfig;
+    status: RunStatus;
+    reason: string | null;
+    owner: Actor;
+    controlVersion: number;
+    lastSeq: number;
+    busy: boolean;
+    createdAt: string;
+    startedAt: string | null;
+    endedAt: string | null;
+    elapsedMs: number;
+    engineWorkMs: number;
+    world: GameState;
+    worldRevision: string;
+    physicalActions: number;
+    decisionSteps: number;
+    requests: number;
+    externalRequests: number;
+    questions: number;
+    lastDecision: unknown;
+    activeSkill: unknown;
+    lastSkillResult: unknown;
+    diagnostics?: unknown;
+    outcome: unknown;
+    interventions: unknown[];
+    lineage: unknown;
+    readOnly: boolean;
+    transportRetry?: import('./retry.js').RetryState | null;
+};
+export type Command = {
+    commandId: string;
+    expectedControlVersion: number;
+    actor: Actor;
+    action: 'start' | 'step' | 'pause' | 'cancel' | 'takeover' | 'intervene' | 'schedule' | 'checkpoint';
+    tool?: Exclude<EditTool, 'inspect'>;
+    point?: Point;
+    expectedWorldRevision?: string;
+    afterAction?: number;
+    label?: string;
+};
+export type CommandResult = {
+    commandId: string;
+    accepted: true;
+    replayed: boolean;
+    state: LabView;
+    checkpointId?: string;
+};
+export declare const TERMINAL: Set<RunStatus>;
+export declare class LabError extends Error {
+    readonly code: string;
+    readonly status: number;
+    constructor(code: string, message: string, status?: number);
+}
+export declare const fail: (code: string, message?: string, status?: number) => never;
+export declare function parseActor(raw: unknown): Actor;
+export declare function identifier(raw: unknown, label?: string): string;
+export declare function parseIntervention(raw: unknown): Intervention;
+export declare function parseConfig(raw: unknown): LabConfig;
+export declare function parseCommand(raw: unknown): Command;
+export declare function stable(value: unknown): string;

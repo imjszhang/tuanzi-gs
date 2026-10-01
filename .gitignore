@@ -1,0 +1,17 @@
+node_modules/
+.env
+*.log
+.DS_Store
+
+# Shared-run output is runtime data, never source
+.gs-lab/
+
+# Local experiment evidence and generated media
+reports/
+promo/
+
+# Local credentials and editor/runtime files
+.env.*
+!.env.example
+*.pem
+*.key

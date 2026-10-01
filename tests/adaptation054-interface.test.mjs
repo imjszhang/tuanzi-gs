@@ -1,0 +1,9 @@
+/** Interface-level assertions without network requests or task solvers. */
+import test from 'node:test';import assert from 'node:assert/strict';
+import {parseConfig} from '../dist/src/lab/types.js';import {outputContract,parsePatches} from '../dist/src/adaptive/spec.js';
+import {PUBLIC_RULES} from '../dist/src/adaptive/world-port.js';import {generatorMessages} from '../server/adaptive.mjs';
+import {subproblem,analysis} from './fixtures/adaptive-v054.mjs';
+const rules=Object.keys(PUBLIC_RULES);
+test('054 maxDepth zero is a supported API choice: same-layer work remains enabled',()=>{const c=parseConfig({kind:'game',controller:'adaptive',maxDepth:0});assert.equal(c.maxDepth,0);assert.throws(()=>parseConfig({kind:'game',controller:'adaptive',maxDepth:4}));});
+test('054 action and analysis schemas share one-update envelope but separate authority',()=>{assert.equal(outputContract('action',rules).jsonSchema.properties.proposals.maxItems,1);assert.equal(parsePatches(subproblem(),'action',rules)[0].kind,'subproblem');assert.equal(parsePatches(analysis(),'analysis',rules)[0].kind,'analysis');assert.throws(()=>parsePatches(analysis(),'action',rules));});
+test('054 child G gets task-specific contract, no hidden approval prompt or solution example',()=>{const req={schema:'gs/adaptation-request/v1',depth:1,cause:'subproblem_initial_review',frame:{kind:'analysis',revision:'1',question:'inspect',context:{},options:[]},answer:null,previous:[],evidence:{informationPolicy:'no-reference/v05',publicRules:PUBLIC_RULES}};const msg=generatorMessages(req);const u=JSON.parse(msg[1].content);assert.equal(u.outputContract.frameKind,'analysis');assert.match(msg[0].content,/SAME layer/);assert.match(msg[0].content,/not approval/);assert.deepEqual(u.request,req);assert.equal(u.example,undefined);});

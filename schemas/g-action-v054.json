@@ -1,0 +1,735 @@
+{
+  "schema": "gs/adaptation-output-contract/v3",
+  "frameKind": "action",
+  "instructions": "Return exactly one JSON object with a proposals ARRAY containing EXACTLY ONE patch. A program contains S action options; an analysis contains candidate answers. Do not submit competing interface updates for implicit approval. Each array item IS the patch object. Do NOT output envelope, actionFrame, Stage, or reframeFrame wrapper keys. These were documentation labels, not fields.",
+  "jsonSchema": {
+    "type": "object",
+    "properties": {
+      "proposals": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "program"
+                },
+                "program": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "gs/decision-program/v1"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "\\S"
+                    },
+                    "stages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                            "pattern": "\\S"
+                          },
+                          "question": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1200,
+                            "pattern": "\\S",
+                            "description": "Local question for S, not an executed command."
+                          },
+                          "hypothesis": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1500,
+                            "pattern": "\\S",
+                            "description": "Unverified G hypothesis, never an observed fact."
+                          },
+                          "groups": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "self",
+                                "nearby",
+                                "map",
+                                "objects",
+                                "history"
+                              ]
+                            },
+                            "minItems": 0,
+                            "maxItems": 5,
+                            "uniqueItems": true
+                          },
+                          "ruleIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "enum": [
+                                "goal",
+                                "coordinates",
+                                "energy",
+                                "inventory",
+                                "drop",
+                                "guard",
+                                "danger",
+                                "wait",
+                                "knowledge"
+                              ]
+                            },
+                            "minItems": 0,
+                            "maxItems": 20,
+                            "uniqueItems": true
+                          },
+                          "kinds": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "move",
+                                "pickup",
+                                "eat",
+                                "deposit",
+                                "drop",
+                                "wait"
+                              ]
+                            },
+                            "minItems": 1,
+                            "maxItems": 6,
+                            "uniqueItems": true
+                          },
+                          "target": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 10
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "candidateIds": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 120,
+                                  "pattern": "^(?!__proto__$).+"
+                                },
+                                "minItems": 0,
+                                "maxItems": 40,
+                                "uniqueItems": true
+                              }
+                            ]
+                          },
+                          "candidateScope": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "mode": {
+                                    "const": "stage"
+                                  }
+                                },
+                                "required": [
+                                  "mode"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "mode": {
+                                    "const": "snapshot"
+                                  },
+                                  "revision": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80,
+                                    "pattern": "\\S"
+                                  }
+                                },
+                                "required": [
+                                  "mode",
+                                  "revision"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "until": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "const": "at"
+                                    },
+                                    "x": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 16
+                                    },
+                                    "y": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 10
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "x",
+                                    "y"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "const": "delta"
+                                    },
+                                    "field": {
+                                      "type": "string",
+                                      "enum": [
+                                        "bag",
+                                        "delivered",
+                                        "eaten",
+                                        "baitUsed",
+                                        "turn"
+                                      ]
+                                    },
+                                    "atLeast": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 180
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "field",
+                                    "atLeast"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "const": "value"
+                                    },
+                                    "field": {
+                                      "type": "string",
+                                      "enum": [
+                                        "bag",
+                                        "delivered",
+                                        "energy",
+                                        "lureCount",
+                                        "guardEating"
+                                      ]
+                                    },
+                                    "op": {
+                                      "enum": [
+                                        "gte",
+                                        "lte",
+                                        "eq"
+                                      ]
+                                    },
+                                    "value": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 180
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "field",
+                                    "op",
+                                    "value"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ],
+                              "description": "All until predicates must hold. delta compares current state with the beginning of THIS stage; value compares current absolute state. baitUsed is delta-only; do not silently substitute one meaning for another."
+                            },
+                            "minItems": 1,
+                            "maxItems": 4
+                          },
+                          "maxActions": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 180
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "question",
+                          "hypothesis",
+                          "groups",
+                          "ruleIds",
+                          "kinds",
+                          "target",
+                          "candidateIds",
+                          "until",
+                          "maxActions"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1,
+                      "maxItems": 8
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "title",
+                    "stages"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "kind",
+                "program"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "stage-update"
+                },
+                "expectedPolicyVersion": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000000
+                },
+                "stageIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "changes": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "\\S"
+                    },
+                    "question": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1200,
+                      "pattern": "\\S",
+                      "description": "Local question for S, not an executed command."
+                    },
+                    "hypothesis": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1500,
+                      "pattern": "\\S",
+                      "description": "Unverified G hypothesis, never an observed fact."
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "self",
+                          "nearby",
+                          "map",
+                          "objects",
+                          "history"
+                        ]
+                      },
+                      "minItems": 0,
+                      "maxItems": 5,
+                      "uniqueItems": true
+                    },
+                    "ruleIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "enum": [
+                          "goal",
+                          "coordinates",
+                          "energy",
+                          "inventory",
+                          "drop",
+                          "guard",
+                          "danger",
+                          "wait",
+                          "knowledge"
+                        ]
+                      },
+                      "minItems": 0,
+                      "maxItems": 20,
+                      "uniqueItems": true
+                    },
+                    "kinds": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "move",
+                          "pickup",
+                          "eat",
+                          "deposit",
+                          "drop",
+                          "wait"
+                        ]
+                      },
+                      "minItems": 1,
+                      "maxItems": 6,
+                      "uniqueItems": true
+                    },
+                    "target": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 16
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 10
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "candidateIds": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^(?!__proto__$).+"
+                          },
+                          "minItems": 0,
+                          "maxItems": 40,
+                          "uniqueItems": true
+                        }
+                      ]
+                    },
+                    "candidateScope": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "const": "stage"
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "const": "snapshot"
+                            },
+                            "revision": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80,
+                              "pattern": "\\S"
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "revision"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "until": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "const": "at"
+                              },
+                              "x": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 16
+                              },
+                              "y": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 10
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "const": "delta"
+                              },
+                              "field": {
+                                "type": "string",
+                                "enum": [
+                                  "bag",
+                                  "delivered",
+                                  "eaten",
+                                  "baitUsed",
+                                  "turn"
+                                ]
+                              },
+                              "atLeast": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 180
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "field",
+                              "atLeast"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "const": "value"
+                              },
+                              "field": {
+                                "type": "string",
+                                "enum": [
+                                  "bag",
+                                  "delivered",
+                                  "energy",
+                                  "lureCount",
+                                  "guardEating"
+                                ]
+                              },
+                              "op": {
+                                "enum": [
+                                  "gte",
+                                  "lte",
+                                  "eq"
+                                ]
+                              },
+                              "value": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 180
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "field",
+                              "op",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "description": "All until predicates must hold. delta compares current state with the beginning of THIS stage; value compares current absolute state. baitUsed is delta-only; do not silently substitute one meaning for another."
+                      },
+                      "minItems": 1,
+                      "maxItems": 4
+                    },
+                    "maxActions": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 180
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false,
+                  "minProperties": 1
+                }
+              },
+              "required": [
+                "kind",
+                "expectedPolicyVersion",
+                "stageIndex",
+                "changes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "subproblem"
+                },
+                "task": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1200,
+                      "pattern": "\\S"
+                    },
+                    "hypothesis": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1500,
+                      "pattern": "\\S"
+                    },
+                    "expectedResult": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 800,
+                      "pattern": "\\S"
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "self",
+                          "nearby",
+                          "map",
+                          "objects",
+                          "history"
+                        ]
+                      },
+                      "minItems": 0,
+                      "maxItems": 5,
+                      "uniqueItems": true
+                    },
+                    "ruleIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "enum": [
+                          "goal",
+                          "coordinates",
+                          "energy",
+                          "inventory",
+                          "drop",
+                          "guard",
+                          "danger",
+                          "wait",
+                          "knowledge"
+                        ]
+                      },
+                      "minItems": 0,
+                      "maxItems": 20,
+                      "uniqueItems": true
+                    },
+                    "maxRevisions": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 6
+                    },
+                    "maxGenerations": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 8
+                    }
+                  },
+                  "required": [
+                    "question",
+                    "hypothesis",
+                    "expectedResult",
+                    "groups",
+                    "ruleIds",
+                    "maxRevisions",
+                    "maxGenerations"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "kind",
+                "task"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "minItems": 1,
+        "maxItems": 1
+      }
+    },
+    "required": [
+      "proposals"
+    ],
+    "additionalProperties": false
+  },
+  "semantics": {
+    "recursion": "Only kind=subproblem enters a bounded read-only child G/S. Child G creates an analysis with candidates; child S chooses an answer, not permission to change the parent. Results including unresolved return to the original G. maxDepth prevents further nesting, not same-layer repairs. Do not automatically recurse on abstention.",
+    "candidates": "candidateIds=null means the declared kinds are re-instantiated from current legal primitives at EVERY state. A non-null list without candidateScope keeps legacy fixed-stage semantics and is never silently widened. candidateScope.mode=stage is a persistent whitelist; mode=snapshot requires current revision and expires after any world change, triggering G before any next action. Targets are G-authored coordinates, not paths. Never copy one frame candidate IDs as an entire future route.",
+    "analysis": "Child analysis candidates are hypotheses only. A selected answer returns with its actual S response and evidence; it does not modify the world or certify truth. Returned child failure is evidence for another bounded same-level attempt.",
+    "validation": "Structure, permissions and explicit declaration consistency only; no strategy success oracle. An admitted patch is installed provisionally at the SAME layer; actual action is still selected by S.",
+    "stages": "Stages execute in order. until is ALL-of, evaluated on actual state; it does not create implicit loops or extra actions. Only kinds offered by the current stage can be selected.",
+    "delta": "Change since the START of the stage; positive atLeast. baitUsed/eaten are supported here only.",
+    "value": "Absolute current value; guardEating is maximum remaining eating timer among guards in the authoritative current world, or zero (not only the S-visible subset).",
+    "stageUpdate": "action frame can return kind=stage-update to alter only current stage fields. Use evidence.policyVersion and evidence.currentStage. Omitted fields, completed stages and spent stage budget remain unchanged. This is not an action or a stage-clock reset.",
+    "observations": "request.frame is the exact limited information S saw. request.evidence.observedWorld is the broader information allowed for G. G may choose any registered groups for future S. S missingGroups is not a prohibition on G using its broader evidence.",
+    "uncertainty": "Hypotheses are not facts; no task solution, target, reward rank, reference trajectory or tactical example is supplied."
+  }
+}

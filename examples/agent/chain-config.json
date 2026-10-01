@@ -1,0 +1,10 @@
+{
+  "kind": "judgment",
+  "task": "chain",
+  "strategy": "batch",
+  "backend": "rule",
+  "orderSeed": 441,
+  "maxRequests": 512,
+  "deadlineMs": 120000,
+  "interventions": [{"afterAction": 3, "tool": "wall", "point": {"x": 3, "y": 8}}]
+}

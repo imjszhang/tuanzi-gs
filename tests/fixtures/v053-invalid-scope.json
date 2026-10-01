@@ -1,0 +1,56 @@
+{
+  "proposals": [
+    {
+      "kind": "program",
+      "program": {
+        "schema": "gs/decision-program/v1",
+        "title": "先向东探索浆果区域再回家交付",
+        "stages": [
+          {
+            "name": "向西返回小窝",
+            "question": "是否应该向小窝方向移动以准备后续交付？",
+            "hypothesis": "当前携带1颗浆果，但根目标需要5颗，先回家交付可能不是最有效的，但可以确保当前收获安全。",
+            "groups": [
+              "self",
+              "nearby",
+              "map",
+              "objects"
+            ],
+            "ruleIds": [
+              "goal",
+              "coordinates",
+              "energy",
+              "inventory",
+              "danger",
+              "knowledge"
+            ],
+            "kinds": [
+              "move",
+              "wait"
+            ],
+            "target": {
+              "x": 2,
+              "y": 8
+            },
+            "candidateIds": [
+              "move:7,7",
+              "move:7,8",
+              "move:7,9",
+              "move:8,6",
+              "move:8,8",
+              "wait"
+            ],
+            "until": [
+              {
+                "kind": "at",
+                "x": 2,
+                "y": 8
+              }
+            ],
+            "maxActions": 10
+          }
+        ]
+      }
+    }
+  ]
+}

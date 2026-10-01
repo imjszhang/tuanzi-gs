@@ -1,0 +1,101 @@
+{
+  "schema": "gs/adaptation-output-contract/v2",
+  "frameKind": "reframe",
+  "instructions": "Return exactly one JSON object with a proposals ARRAY. Each array item IS the patch object. Do NOT output envelope, actionFrame, Stage, or reframeFrame wrapper keys. These were documentation labels, not fields.",
+  "jsonSchema": {
+    "type": "object",
+    "properties": {
+      "proposals": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "reframe"
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200,
+              "pattern": "\\S"
+            },
+            "hypothesis": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500,
+              "pattern": "\\S"
+            },
+            "ruleIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "enum": [
+                  "goal",
+                  "coordinates",
+                  "energy",
+                  "inventory",
+                  "drop",
+                  "guard",
+                  "danger",
+                  "wait",
+                  "knowledge"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 20,
+              "uniqueItems": true
+            },
+            "includeBroaderObservation": {
+              "type": "boolean"
+            },
+            "candidateIds": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^(?!__proto__$).+"
+                  },
+                  "minItems": 0,
+                  "maxItems": 40,
+                  "uniqueItems": true
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "question",
+            "hypothesis",
+            "ruleIds",
+            "includeBroaderObservation",
+            "candidateIds"
+          ],
+          "additionalProperties": false
+        },
+        "minItems": 1,
+        "maxItems": 3
+      }
+    },
+    "required": [
+      "proposals"
+    ],
+    "additionalProperties": false
+  },
+  "semantics": {
+    "validation": "Structure and permissions only; no strategy success oracle.",
+    "stages": "Stages execute in order. until is ALL-of, evaluated on actual state; it does not create implicit loops or extra actions. Only kinds offered by the current stage can be selected.",
+    "delta": "Change since the START of the stage; positive atLeast. baitUsed/eaten are supported here only.",
+    "value": "Absolute current value; guardEating is maximum remaining eating timer among guards in the authoritative current world, or zero (not only the S-visible subset).",
+    "stageUpdate": "action frame can return kind=stage-update to alter only current stage fields. Use evidence.policyVersion and evidence.currentStage. Omitted fields, completed stages and spent stage budget remain unchanged. This is not an action or a stage-clock reset.",
+    "observations": "request.frame is the exact limited information S saw. request.evidence.observedWorld is the broader information allowed for G. G may choose any registered groups for future S. S missingGroups is not a prohibition on G using its broader evidence.",
+    "uncertainty": "Hypotheses are not facts; no task solution, target, reward rank, reference trajectory or tactical example is supplied."
+  }
+}

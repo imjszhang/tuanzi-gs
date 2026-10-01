@@ -1,0 +1,16 @@
+
+> gs-engine-reference@0.1.0 demo
+> npm run build && node examples/offline.mjs
+
+
+> gs-engine-reference@0.1.0 build
+> tsc -p tsconfig.json
+
+OFFLINE SCRIPTED FIXTURE — no Jev or LLM request is made. Not an intelligence benchmark.
+{"step":1,"result":{"kind":"policy_updated","version":2},"policyVersion":2}
+{"step":2,"result":{"kind":"executed","actionId":"unlock","feedback":{"actionSucceeded":true,"progress":true,"metrics":{"delta":0},"facts":["unlock"]}},"policyVersion":2}
+{"step":3,"result":{"kind":"executed","actionId":"increment","feedback":{"actionSucceeded":true,"progress":true,"metrics":{"delta":1},"facts":["increment"]}},"policyVersion":2}
+{"step":4,"result":{"kind":"executed","actionId":"increment","feedback":{"actionSucceeded":true,"progress":true,"metrics":{"delta":1},"facts":["increment"]}},"policyVersion":2}
+{"step":5,"result":{"kind":"done","outcome":"succeeded"},"policyVersion":2}
+Counters: { cycles: 5, actions: 4, modelCalls: 5, repairs: 1 }
+Trace: observed → candidates → repair_requested → repair_proposed → policy_committed → observed → candidates → selector_requested → selector_answered → decision → action_intent → action_receipt → transition → observed → candidates → selector_requested → selector_answered → decision → action_intent → action_receipt → transition → observed → candidates → selector_requested → selector_answered → decision → action_intent → action_receipt → transition → observed → candidates → selector_requested → selector_answered → decision → action_intent → action_receipt → transition → run_finished

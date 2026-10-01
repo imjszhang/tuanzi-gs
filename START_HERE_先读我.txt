@@ -1,0 +1,15 @@
+G/S Lab v0.5.5
+
+Node.js 22+。解压到新目录，迁移自己的.env，不覆盖原工作树。
+进入tuanzi-gs后运行 npm start，再打开 http://127.0.0.1:4173/lab。
+已包含编译文件，不必先npm install。
+
+本版：Jev瞬时访问错误有界重试；本地stdio MCP读取项目、查看和主持同一场实验。
+默认首次失败后额外重试2次；none不属于网络失败，不重试答案。
+MCP客户端直接启动 node /绝对路径/tuanzi-gs/bin/gs-lab-mcp.mjs。
+默认只读，--allow-control开放控制，--allow-live才可请求已授权的真实模型。
+--profile audit可读参考源码和历史报告，但始终只读，不能回填答案。
+
+先读 docs/RELEASE-v0.5.5.md、docs/MCP-v0.5.5.md、docs/RETRY-v0.5.5.md。
+MCP配置示例在examples/mcp。外部Agent也应先读AGENTS.md。
+默认本地是协议夹具，不是通关模型；制作时未调用真实Jev/LLM。

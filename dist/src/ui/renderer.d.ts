@@ -1,0 +1,38 @@
+import type { GameState, Point, EditTool, GameCandidate } from '../game/types.js';
+export declare class WorldRenderer {
+    readonly canvas: HTMLCanvasElement;
+    private ctx;
+    private state;
+    private frame;
+    private raf;
+    private disposed;
+    private px;
+    private py;
+    private gx;
+    private gy;
+    private hover;
+    private tool;
+    private route;
+    private showPath;
+    private showDanger;
+    private observer;
+    private reduced;
+    constructor(canvas: HTMLCanvasElement, onClick?: (p: Point) => void);
+    setState(s: GameState, instant?: boolean): void;
+    setTool(t: EditTool): void;
+    setOverlay(route: boolean, danger: boolean): void;
+    setCandidate(c: GameCandidate | null): void;
+    dispose(): void;
+    private resize;
+    private rr;
+    private ellipse;
+    private text;
+    private loop;
+    private draw;
+    private berry;
+    private rock;
+    private wall;
+    private home;
+    private guard;
+    private tuanzi;
+}

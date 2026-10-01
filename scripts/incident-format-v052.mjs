@@ -1,0 +1,8 @@
+/** Read-only regression of user-supplied invalid G contents. No model, solver or game execution. */
+import fs from 'node:fs';import {parsePatches} from '../dist/src/adaptive/spec.js';import {PUBLIC_RULES} from '../dist/src/adaptive/world-port.js';import {generatorMessages} from '../server/adaptive.mjs';
+const data=JSON.parse(fs.readFileSync(new URL('../tests/fixtures/incident-v051-invalid-g.json',import.meta.url),'utf8'));
+const cases=data.rows.map((r,i)=>{let diagnostics;try{parsePatches(JSON.parse(r.content),'action',Object.keys(PUBLIC_RULES));throw Error('Original unexpectedly accepted');}catch(e){if(!e.diagnostics)throw e;diagnostics=e.diagnostics;}
+ const input={schema:'gs/output-repair-request/v1',depth:0,cause:'output_format_invalid',originalCause:'progress_review_due',frame:{kind:'action',revision:'7'},attempt:1,previousOutput:r.content,preserveFrom:r.content,diagnostics};
+ const request=generatorMessages(input);return {case:i+1,sourceEvent:r.sourceEvent,accepted:false,diagnostics,oldUserMessageCharacters:r.requestCharacters,newRepairUserMessageCharacters:request[1].content.length,units:'JavaScript string length, NOT tokens or model cost',repairHasWorld:false};});
+const out={version:'0.5.2',source:data.source,realModelCalls:0,gameActions:0,note:'Original failures must remain rejected with precise locations. No corrected tactic is executed. Micro control-flow successes are separately scripted tests, not evidence of model intelligence.',cases};
+fs.mkdirSync('reports/v052',{recursive:true});fs.writeFileSync('reports/v052/incident-format.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out,null,2));

@@ -1,0 +1,25 @@
+import { PUBLIC_RULES } from './world-port.js';
+import { GROUPS, KINDS } from './spec.js';
+export function explorationBackend(delay = 0) { let n = 0; return { id: 'legal-rotation-not-a-solver/v05', kind: 'rule', async ask(input, signal) { signal.throwIfAborted(); if (delay)
+        await new Promise((resolve, reject) => { const abort = () => { clearTimeout(timer); reject(signal.reason); }; const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, delay); signal.addEventListener('abort', abort, { once: true }); }); signal.throwIfAborted(); const answers = {}; for (const [id, q] of Object.entries(input.questions)) {
+        if (q.type === 'choice') {
+            const options = Object.keys(q.criteria).filter(k => k !== 'none'), chosen = options[n++ % Math.max(1, options.length)] ?? 'none';
+            answers[id] = { type: 'choice', choice: chosen, confidence: 1, probabilities: Object.fromEntries(Object.keys(q.criteria).map(k => [k, k === chosen ? 1 : 0])) };
+        }
+        else if (q.type === 'noul')
+            answers[id] = { type: 'noul', noul: 1 };
+        else
+            answers[id] = { type: 'score', score: n++ % q.criteria.length };
+    } return { answers, model: 'offline-rotation-fixture-not-a-model' }; } }; }
+export function contextOnlyGenerator() {
+    return { id: 'context-expansion-fixture/v05', kind: 'local', async propose(input, signal) {
+            signal.throwIfAborted();
+            if (input.schema === 'gs/output-repair-request/v1')
+                return { output: { invalidProposal: { reason: 'local_fixture_has_no_format_repair', content: JSON.stringify(input.previousOutput), diagnostics: input.diagnostics } } };
+            if (input.frame.kind === 'analysis')
+                return { output: { proposals: [{ kind: 'analysis', question: input.frame.question, hypothesis: '离线子问题协议夹具，不是诊断器', groups: ['self'], ruleIds: ['goal'], candidates: [{ id: 'unknown', description: '尚未解决', claim: '本地夹具没有语义推理能力，需要父层继续审查。' }] }] } };
+            if (input.frame.kind === 'reframe')
+                return { output: { proposals: [{ kind: 'reframe', question: '比较这些上下文修订方案；根据之前实际的失败记录，选择一种值得试行的调整，仍可拒绝全部。', hypothesis: '这只是离线协议夹具：提供公开规则与更广观测，不提供行为答案。', ruleIds: Object.keys(PUBLIC_RULES), includeBroaderObservation: true, candidateIds: null }] } };
+            return { output: { proposals: [{ kind: 'program', program: { schema: 'gs/decision-program/v1', title: '公开证据扩展 · 非解题策略', stages: [{ name: '查看更广的允许信息', question: '依据根目标、公开规则及此前实际结果重新判断下一步，仍可返回 none。', hypothesis: '信息覆盖增加可能有用；本地夹具不计算动作优劣，不预设战术。', groups: [...GROUPS], ruleIds: Object.keys(PUBLIC_RULES), kinds: [...KINDS], target: null, candidateIds: null, until: [{ kind: 'delta', field: 'delivered', atLeast: 1 }], maxActions: 24 }] } }] } };
+        } };
+}

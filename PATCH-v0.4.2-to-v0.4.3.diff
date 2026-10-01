@@ -1,0 +1,1163 @@
+diff --git a/AGENTS.md b/AGENTS.md
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -1,4 +1,4 @@
+-# Working with G/S Lab 0.4.2
++# Working with G/S Lab 0.4.3 (UI; runtime/API 0.4.2)
+ 
+ You are an experiment operator, not the tested in-game policy. Use the shared service API/CLI; do not simulate clicks or silently alter game objectives to make a run pass.
+ 
+@@ -25,3 +25,7 @@
+ - `executionFeedback` is measured execution evidence; `repairFeedback` is proposal validation feedback. Keep both when asking a generator to revise a genuinely failed skill.
+ - Use `npm run probe:child` to export the frozen first child packet without networking. Actual isolated Jev probing requires explicit user authorization and `node scripts/probe-child-v042.mjs --live --variant=current --backend=jev --samples=1 --max-requests=1`. It performs one direct decision, no skill generation, and no physical execution. The legacy variant reconstructs the old packet shape, not the missing original provider request.
+ - View/API/CLI schemas remain compatible with v0.4.1, with optional diagnostics and disambiguated question/dispatch strategy. See docs/API-v0.4.2.md.
++
++## v0.4.3 observation UI
++
++The shared viewer defaults to a run list. viewerUrl still opens the same authoritative run; creating a browser draft or switching overview/decisions/diagnostics/config never advances the experiment. No CLI commands or schemas changed. Human takeover is explicit and revokes the previous owner. Replay/import is read-only. Backend and runtime versions remain 0.4.2 intentionally. For judgment fixtures keep deadlineMs <=120000; the older generic API limit is wider than that fixture validation.
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,101 +1,55 @@
+-# 团子 / G/S Lab v0.4.2
++# 团子 / G/S Lab v0.4.3
+ 
+-**外部 Agent 主持实验，G/S 决定游戏行为，人通过网页观察同一场实验。**
++**Agent 主持实验，G/S 决定行为，人看同一场实验。** 本版重新组织界面，不更改 v0.4.2 的决策、恢复、预算或 API。
+ 
+-这一版修复真实模型弃权后反复生成相同技能的恢复问题。子层现在收到注册的目标—阶段—即时任务上下文；弃权与物理技能失败分开记录；实际失败反馈送到真正需要修复的生成器；更换 ID 不能绕过同条件重复检测。保留 HTTP API、CLI、同一 runId 网页观测和原有游戏。
++## 先打开这里
+ 
+-## 启动（Node.js 22+）
+-
+-已包含编译文件，运行不需要安装 npm 依赖。
++需要 Node.js 22+，解压进入本目录：
+ 
+ ```bash
+ npm start
+ ```
+ 
+-- Agent 观测台：`http://127.0.0.1:4173/lab`
+-- 原有本地试玩：`http://127.0.0.1:4173/`
+-- `play.html`：原有离线单文件试玩，不依赖服务；它不是共享实验会话。
++打开 **http://127.0.0.1:4173/lab**。已含编译文件，无需先 npm install。
+ 
+-### 让 Agent 操作
++先在实验列表打开一场实验；没有实验时点「新建实验」。默认就绪，不自动运行。详情页只有四个主入口：**概览、判断过程、诊断、配置**。当前实验的配置只读，新建草稿在独立对话框。
+ 
+-另开一个终端，在同一项目目录中：
++- 外部 Agent 创建后返回的 viewerUrl 直达同一个 runId；人可观察、按需接管。
++- 模型弃权 `blocked` 不等于可继续的 `paused`，界面保留原始原因与证据。
++- 回放的地图、指标和当前技能来自同一历史快照，回放不会执行动作。
++- `/` 或 `play.html` 是本地体验；完整任务与判断实验分别在两个页签，不是共享服务会话。
++
++## CLI 兼容
+ 
+ ```bash
+ node bin/gs-lab.mjs capabilities
+ node bin/gs-lab.mjs create --kind game --scenario guarded --strategy batch
+-# 返回 runId 和 viewerUrl。在网页打开 viewerUrl，以下替换 RUN_ID。
++# 以下 RUN_ID 替换成创建回执中的 ID
+ node bin/gs-lab.mjs step RUN_ID
+ node bin/gs-lab.mjs start RUN_ID
+ node bin/gs-lab.mjs status RUN_ID
+ node bin/gs-lab.mjs events RUN_ID --follow
+-node bin/gs-lab.mjs result RUN_ID
+ node bin/gs-lab.mjs export RUN_ID --out reports/my-run.json
+ ```
+ 
+-命令默认输出 JSON。也可以 `npm run lab -- ...`；在安装/链接本地包后使用 `gs-lab ...`。CLI 只是服务客户端，**不会在终端另建一个游戏实例**。
++默认规则后端；真实请求需要服务端 .env、用户明确授权、allowLive 与请求预算。未实测的模型效果保持 NOT_RUN。API/CLI 与底层状态协议沿用 v0.4.2，因此能力查询仍报告真实的运行时版本。
+ 
+-### 一键外部 Agent 编排示例
++## 修改与验证
+ 
+ ```bash
+-npm run demo:agent
++npm install
++npm run check              # 构建 + 所有代码测试
++npm run bench:v04          # 原有 52 组离线评估
++npm run test:browser       # 当前 UI 与旧模式回归；另需 Python Playwright + Chromium
+ ```
+ 
+-脚本通过 HTTP 分别创建 direct/batch/serial/dependent 四个独立冷启动实验，运行、等待、输出结果与查看地址。默认规则后端，10 ms 合成延迟，无真实模型调用。页面列出同一个服务中的全部会话；很快结束的实验可以回放，不通过人为放慢执行来夸大模型延迟。
++浏览器脚本默认系统 Chromium `/usr/bin/chromium`；可设置 CHROMIUM_PATH。它自动开启临时本机测试服务，mock provider 明确作为替身，无实网调用。浏览器内容装载和 API 传输夹具的验证限制见说明。
+ 
+-## 保留的实验控制能力
++## 阅读顺序
+ 
+-- **两个实验范围**：判断实验（energy/fast/reserve/chain）；主世界（meadow/detour/guarded/remix），支持父子 G/S，以及程序搜索/完整规则离线对照。
+-- **唯一权威状态**：服务持有世界、引擎和日志；网页仅显示快照与事件。关闭标签页不取消实验。新网页可根据 runId 继续观察。
+-- **生命周期**：create/start/step/pause/cancel；暂停发生在决策量子边界，正在进行的一个量子可能完成。cancel 合作式终止，不能撤销已经发生的操作。
+-- **控制权与版本**：网页默认只读，接管会暂停并记录来源；旧控制者写入被拒绝。所有控制命令需要控制版本，编辑额外核对世界 revision。
+-- **幂等**：同一 commandId + 完全相同的请求只执行一次；相同 ID 改变请求返回 409。用于响应丢失后的明确重试，不做隐式重发。
+-- **干预与分支**：预设动作边界上的脚本、显式人工编辑、不可变检查点、冷分支/明确继承经验。分支是新试验，不是活动子引擎的透明恢复。
+-- **证据**：状态、命令、控制者、父子事件、请求、干预与结果导出 JSON。终局报告自动写入 `.gs-lab/exports`；保存失败会在 API 的 archive 字段报告。
+-- **真实模型保持显式授权**：配置服务端密钥，加 `--allow-live --max-requests N`。默认是 rule。未执行实网就没有模型性能结论。
++1. `docs/RELEASE-v0.4.3.md`：界面变化、升级与已知限制。
++2. `docs/VALIDATION-v0.4.3.md`：这次实际检查的范围与结果。
++3. `AGENTS.md`、`docs/AGENT_INTERFACE.md`：外部 Agent 操作。
++4. `docs/API-v0.4.2.md` 与 `docs/API-v0.4.1.md`：保持兼容的控制协议。
+ 
+-
+-## v0.4.2：遇到模型弃权时
+-
+-若子层返回 none，服务将状态标为 `blocked`，原因例如 `decision_blocked:no_local_suitable_action`；它不是可直接继续的操作员暂停。网页“修复诊断”与 CLI 的 `diagnostics` 包含当前任务上下文、完整模型判断、最近失败及修复次数。系统不选概率第二名、不隐式用规则动作，也不在同一证据下再次请求相同技能。
+-
+-当实际技能失败、仍有结构性修复空间时，生成器分别收到 `executionFeedback`（实际执行证据）和 `repairFeedback`（本次提案校验拒绝）。同样的局面与控制器下，仅改技能名字或 ID 不构成新方案。
+-
+-**本版没有重跑真实 Jev/LLM。**发行修复通过受控替身与规则回归验证；新的上下文能否改善真实模型判断，必须另做实网实验。
+-
+-## 核心注意事项
+-
+-**人和 Agent 是同一台机器上的可信操作方，不是多租户用户。**服务仅监听 127.0.0.1。短期本地 token 保护接口；actor ID 是协作与溯源，不是不同人的安全凭据。不要直接暴露到公网。另一台机器上的 Agent 可通过受控 SSH 转发连接，不能简单改监听地址代替访问控制。
+-
+-**墙钟期限从首次决策开始，包括之后的人工暂停。**`engineWorkMs` 另外统计引擎推进的耗时（包括模型等待，不等于 CPU 时间）。修改观看或回放速度不会修改执行时间。手动教学可显式设置更长的 `deadlineMs`，正式基准统一该配置。
+-
+-**活跃会话不做崩溃恢复。**浏览器断线可重连；服务重启会失去内存中的会话和控制器。已保存终局 JSON 可以在观测台导入只读回放。没有承诺远端副作用 exactly-once 或持久化执行恢复。
+-
+-## 文档与源码
+-
+-- [v0.4.2 修复、迁移与实网复查](docs/RELEASE-v0.4.2.md)
+-- [v0.4.2 API 增量与弃权处理](docs/API-v0.4.2.md)
+-- [本版验证记录和限制](docs/VALIDATION-v0.4.2.md)
+-
+-- [给外部 Agent 的操作手册](docs/AGENT_INTERFACE.md)
+-- [HTTP API 与 JSON 示例](docs/API-v0.4.1.md)
+-- [设计和限制](docs/DESIGN-v0.4.1.md)
+-- [验证范围](reports/v041/VALIDATION.md)
+-- `src/lab/`：配置/协议、会话适配器、统一管理器、网页观测器（TypeScript）
+-- `server/lab/http.mjs`：认证、HTTP、SSE、终局归档
+-- `bin/gs-lab.mjs`：CLI
+-- `examples/agent/compare.mjs`：外部 Agent 风格编排示例
+-
+-## 开发与复验
+-
+-```bash
+-npm install             # 仅在改源码、需要本地 TypeScript 时
+-npm run check           # 重建游戏/观测台/通用引擎，再运行全部代码测试
+-npm run test:lab        # 新控制面专项
+-npm run bench:v04       # 旧判断实验基准
+-npm run test:browser:041
+-npm run test:incident  # 35 项事故类型专项
+-npm run bench:incident # 离线重现，不调用模型
+-npm run probe:child    # 首步冻结包，默认 NOT_RUN
+-```
+-
+-浏览器自动化额外需要 Python Playwright + Chromium。由于当前执行环境限制，交付的网页专项脚本采用真实本地 HTTP 的测试桥接；SSE 网络协议由 Node 集成测试独立验证。它不冒充真实 HTTP 页面导航实测。详细证据与限制见验证文档。
++`.env`、`.gs-lab/exports` 和本地代码修改自行保留；解压到新目录审阅迁移，不覆盖工作树。仅限可信本机使用；无公网多租户认证、活动会话崩溃恢复或真实模型收益证明。
+diff --git a/START_HERE_先读我.txt b/START_HERE_先读我.txt
+--- a/START_HERE_先读我.txt
++++ b/START_HERE_先读我.txt
+@@ -1,14 +1,14 @@
+-团子 / G/S Lab 0.4.2
++团子 / G/S Lab v0.4.3 — 界面重组版
+ 
+-Node.js 22+，进入本目录执行 npm start。无需先安装依赖。
+-Agent 与人共享实验：http://127.0.0.1:4173/lab
+-原有离线试玩：http://127.0.0.1:4173/ 或直接打开 play.html
++Node.js 22+，在本目录运行 npm start（无需先 npm install）。
++默认推荐：http://127.0.0.1:4173/lab
++这是 Agent 和人共享的实验服务；列表 → 打开实验 → 概览 / 判断过程 / 诊断 / 配置。
++新建是独立草稿，当前配置只读；决策受阻不显示“继续”。
+ 
+-外部 Agent 先读 AGENTS.md 与 docs/AGENT_INTERFACE.md。
+-本版修复与升级注意事项：docs/RELEASE-v0.4.2.md
+-API 新增诊断字段：docs/API-v0.4.2.md
+-测试范围：docs/VALIDATION-v0.4.2.md
++本地体验：play.html 或 http://127.0.0.1:4173/
++完整任务与判断实验分开显示；单文件不与 CLI 共享会话。
+ 
+-模型仍弃权时会明确暂停并保留证据，不会隐式改选规则答案、不断生成同样的技能或扩大修复预算。
+-真实 Jev/LLM 尚未在本次构建中复测。npm run probe:child 默认不联网。
+-从旧版升级建议解压到新目录；密钥 .env 和 .gs-lab/exports 留在自己机器上，不覆盖、不提交。
++版本0.4.3只改界面。底层引擎、API、CLI仍保留0.4.2行为与协议标识。
++升级到新目录，保留自己的 .env、.gs-lab/exports 和自定义改动。
++阅读 docs/RELEASE-v0.4.3.md 和 docs/VALIDATION-v0.4.3.md。
++Agent先读AGENTS.md；真实模型仍须明确授权，本次构建未请求真实模型。
+diff --git a/docs/RELEASE-v0.4.3.md b/docs/RELEASE-v0.4.3.md
+--- /dev/null
++++ b/docs/RELEASE-v0.4.3.md
+@@ -0,0 +1,60 @@
++# G/S Lab v0.4.3：以一场实验为中心的观测台
++
++## 本版范围
++
++这是信息架构、呈现和操作流程重组，不是新的决策算法版本。以 v0.4.2 发行包为基础，保留恢复机制、世界规则、父子 G/S、模型提示与任务图、预算、验收器、CLI、HTTP API 和事件协议。UI 与 npm 包号为 0.4.3；底层 Lab 状态协议、服务 banner、CLI 帮助与问题版本仍按其真实实现保留 0.4.2。这不是漏改运行时版本。
++
++## 入口
++
++启动 `npm start` 后打开 `http://127.0.0.1:4173/lab`。Node.js 22+；已经包含编译文件，试玩不需要 npm install。
++
++默认进入实验列表。CLI 返回的 `/lab?run=...` 仍直达同一个服务端会话。网页读取、切换页签、查看证据不会推进引擎或请求模型。外部 Agent 仍通过 `bin/gs-lab.mjs` 和现有 API 操作。
++
++`/` 与 `play.html` 保留本地体验，新增「完整任务体验 / 判断组合实验」切换，不再同时摆出两套运行上下文。隐藏主游戏时，其键盘快捷键不会误推进主世界。本地页不是服务端共享会话。
++
++## 信息层级
++
++### 实验列表
++
++实验标题、类型、状态、配置来源和控制者优先；完整 runId 可检索，短 ID 辅助区分。创建、导入独立入口，不常驻新建参数表。
++
++### 单个实验的四个页签
++
++- **概览**：根目标、当前主持者、实际判断来源、地图、任务进展和资源、当前技能/阶段/即时任务、最近关键过程。
++- **判断过程**：选择某次判断，查看问题、原始候选顺序、真实回答、概率或路由标记、输入事实，以及父子结果。完整过程与原始事件可追溯。
++- **诊断**：可读原因、原始 reason、修复/请求/动作/时间预算、阻塞上下文与完整 JSON。未知错误不假造为已知原因。
++- **配置**：本局实际参数和版本，只读。兼容字段 task=energy 不会被误写成主游戏目标。修改配置创建新实验，不改写正在运行的实验。
++
++“已配置 Jev”不等于“已实际调用”；测试替身不标成真实模型。替身场景保留原始提供商路径计数，并明确它不是实网证据。界面摘要由注册状态和记录产生，不调用模型编写旁白，也不展示虚构思考。
++
++## 操作流程
++
++新建对话框先选择完整任务/判断组合，再选择程序化、Jev 或 Jev+LLM 预设。控制器、生成来源、预算等仍是可展开的独立配置维度，历史版本不再作为主要入口名称。
++
++创建只分配就绪会话，不自动启动。取消草稿不影响当前世界。未配置模型时不能提交真实模式；每个新实验或实网分支必须单独授权。高级字段非法时展开所在分组以便修正。
++
++非拥有者主要看到「接管并暂停」。操作员就绪时显示开始/单步，运行中显示暂停，取消需确认。`blocked` 是引擎终止状态，不显示“继续”；`paused` 才是可继续的操作员暂停。检查点、分支和干预置于更多操作中。权限与版本仍以服务端为准，前端按钮不是安全边界。
++
++分支有独立对话框，显示检查点物理回合、世界版本和预算语义；显式选择经验继承及判断方式，不读取未提交的新建草稿。干预参数必须确认，在原接口规定的静止边界生效。
++
++## 回放与断线
++
++回放使用导出中的完整 `state` 快照。地图、状态、技能、判断和指标都对应同一个历史时刻，不使用历史地图搭配终局计数。只读期间不提供控制操作。缺失历史状态时仅展示有证据的最终快照，不补造过程。
++
++实时连接从权威快照及事件序号续读，加载已有分页历史。断线显示陈旧快照提示并禁用写入；重连续读，不重启或补执行引擎。关闭网页不会停止实验。超过前端历史缓存界限时明确提示完整证据需导出。
++
++## 桌面与手机
++
++保留地图资产和绿色系。桌面概览采用地图与 G/S 当前过程并排，避免新建、编辑和预算工具各占一栏。手机把地图提前，四页签与模态流程代替桌面工具墙堆叠。具备键盘页签切换、对话框焦点返回、可见焦点与 reduced-motion 支持；不是正式无障碍合规认证。
++
++## 实现边界
++
++新增 `src/lab/presentation.ts` 为纯只读投影，`viewer-layout.ts` 管理观测布局，`viewer.ts` 保留同一 API 客户端控制。`src/ui/workspace-navigation.ts` 只组织本地界面。观测 bundle 不包含 GSEngine，也不创建第二个游戏世界。
++
++复验中发现既有通用 API 允许 3,600,000ms 截止时间，但判断夹具自身只接受 120,000ms。新表单按任务范围设置输入上限，不悄悄截断用户值；CLI/API 仍按原协议，超出夹具范围的直接调用问题未在 UI 版本中修改。判断实验请设 deadlineMs<=120000。
++
++## 升级
++
++解压至新目录；保留自己的 `.env`、`.gs-lab/exports` 和本地修改。不要用整个新目录覆盖自定义的 thinking/reasoning 或超时改动。提供的源码差异补丁基于干净 v0.4.2，仅用于审阅合并，应用后需要重新构建。
++
++仍仅供可信本机使用。没有新增持久运行恢复、跨设备权限、真实模型性能结论、递归深度或自动进化能力。历史原始 JSON 可导入只读查看。
+diff --git a/docs/VALIDATION-v0.4.3.md b/docs/VALIDATION-v0.4.3.md
+--- /dev/null
++++ b/docs/VALIDATION-v0.4.3.md
+@@ -0,0 +1,54 @@
++# G/S Lab v0.4.3 验证说明
++
++## 范围与版本
++
++以交付的 v0.4.2 ZIP 为基线。v0.4.3 是页面组织、只读展示模型和操作流程变更；没有改变决策、世界物理、预算、恢复、CLI 或 HTTP API 行为。UI 与包版本 0.4.3，底层状态/服务/CLI 继续报告其真实协议版本 0.4.2。
++
++## 本轮结果
++
++| 检查 | 结果 |
++|---|---:|
++| TypeScript 构建 | 通过 |
++| 所有代码测试（保留原 365 项，新增呈现层 34 项） | 399 / 399 |
++| 新共享观测台 Chromium | 63 / 63 |
++| 原父子技能本地界面回归 | 31 / 31 |
++| 原完整程序本地界面回归 | 26 / 26 |
++| 原判断实验本地界面回归（仅适配新的页签导航） | 33 / 33 |
++| 浏览器合计 | 153 / 153 |
++| 原 v0.4 离线行为基准 | 52 组完成，边界组允许按预算停止 |
++| 引擎、世界、决策、服务/API、CLI 和 renderer 文件对比 | 66 个保护文件与原 ZIP 完全一致 |
++| 真实 Jev / LLM 请求 | NOT_RUN |
++
++原始当前记录：`reports/v043/unit-all.txt`、`browser-v043.json`、`browser-hierarchy.json`、`browser-legacy.json`、`browser-v04-adapted.json`、`ui-gate-final.txt`、`benchmark-v04-regression.json`、`runtime-integrity.json`。
++
++## 具体检查
++
++新呈现测试验证状态和目标不串线、game 配置中兼容 task 字段不冒充实际目标、测试替身来源标记、按拥有者和运行状态显示操作、受阻无恢复按钮、断线与回放不可写、任务上下文不变成 [object Object]、安全转义、关键事件与原始记录关联、实际判断读取、不用晚于所选时刻的证据以及展示不改变原始世界。
++
++新浏览器测试从真实 CLI 创建会话，页面观看相同 world；检查列表筛选、新建取消、四页签与键盘切换、原始证据按需查看、草稿不改变本局、接管确认和旧 Agent 拒绝、检查点与独立分支配置、干预留痕、取消、模型授权、终局无继续按钮。
++
++完整快照回放以补能任务实测：开始时能量 10、交付 4/5、外部计数 0；结束时能量 40、交付 5/5。回放开始不展示未来判断；回放和导入不执行动作。断开观测传输时显示旧快照提示，写按钮不可用；重连续读，不重新执行引擎。
++
++页面诊断采用明确的离线事故替身：模型式弃权后状态 blocked、零物理步、具体 reason 和修复预算可见；浏览诊断不会再次请求生成。替身路径计数保留，但不展示为真实 Jev 性能证据。
++
++本地试玩的完整任务与判断组合分开：切换页签不修改世界，隐藏主任务时其快捷键不推进；四组补能判断结果仍是 2 个动作，请求数 2 / 2 / 50 / 4。
++
++## 测试方式与限制
++
++Node.js 22.16.0 / TypeScript 5.8.3 / 系统 Chromium。默认浏览器可执行路径 `/usr/bin/chromium`，可用 CHROMIUM_PATH 替换。
++
++本环境阻止浏览器直接导航 HTTP/file URL。浏览器用 `set_content` 装载本次真正构建的 HTML/CSS/JS；共享观测台通过显式传输夹具请求真实本机服务，事件分页转换为浏览器流以验证消费逻辑。原有 Node 集成测试另行验证真实 HTTP/SSE 网络契约。没有声称测试了浏览器原生 HTTP 页面导航、原生 SSE 重连全部网络条件、公网部署、Safari 或 Firefox。页面历史 URL 回写在夹具中保存为测试值，不把它当成真实浏览器前进后退验证。
++
++旧判断实验回归仅修改导航到新页签、展开高级项和版本标题断言，原行为、候选、请求、延迟和结果断言保留。旧共享观测台 DOM 已替换，其历史选择器脚本不当作本版通过记录；新版 63 项覆盖当前控制界面。可运行 `npm run test:browser` 自动开隔离本地服务并依次执行当前四套脚本。
++
++确认了键盘页签、对话框焦点返回、手机 390px 无横向溢出和首屏地图；这不是形式化无障碍认证或穷尽安全审计。
++
++## 已知未改变的问题
++
++既有 Lab API 接受最高 3,600,000ms 的通用截止值，而 judgment 夹具内部检查上限是 120,000ms。该版本新建表单按实际实验类型限制输入并在字段无效时展开高级配置，但没有改变后端 API。CLI judgment 实验请设置不超过 120,000ms。此范围外的既有后端拒绝不是新 UI 的引擎修复。
++
++底层仍保留先前边界：无真实模型效果证据、活动运行持久崩溃恢复、跨用户权限和货币硬预算。界面帮助理解证据，不替代正确性证明。
++
++## 封包复验
++
++最终归档从空目录解压，重新构建与运行全部代码测试；结果与文件哈希比较另见随交付的独立 `gs-v0.4.3-verification.zip`。只有实际通过后才在最终交付说明中报告。SHA256SUMS.json 覆盖其余归档文件，不包含自己；本机测试产生的 .gs-lab 数据不打包。
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "tuanzi-gs-lab",
+-  "version": "0.4.2",
++  "version": "0.4.3",
+   "private": true,
+   "type": "module",
+   "description": "别让团子饿死 — a transparent, playable domain adapter for the G/S TypeScript runtime",
+@@ -13,7 +13,7 @@
+     "test": "node --test tests/*.test.mjs vendor/gs-engine-ts/tests/*.test.mjs",
+     "check": "npm run build && npm test",
+     "bench": "node scripts/benchmark.mjs",
+-    "test:browser": "python scripts/browser-v04.py",
++    "test:browser": "python scripts/check-ui-v043.py",
+     "bench:v03": "node scripts/benchmark-v03.mjs",
+     "bench:models": "node scripts/benchmark-models.mjs",
+     "test:browser:legacy": "python scripts/browser-legacy-on-v03.py",
+@@ -21,7 +21,7 @@
+     "test:browser:031": "python scripts/browser-v031.py",
+     "bench:v04": "node scripts/benchmark-v04.mjs",
+     "bench:judgments": "node scripts/benchmark-judgments.mjs",
+-    "test:browser:04": "python scripts/browser-v04.py",
++    "test:browser:04": "python scripts/browser-v04-on-v043.py",
+     "test:browser:hierarchy": "python scripts/browser-v03.py",
+     "lab": "node bin/gs-lab.mjs",
+     "test:lab": "node --test tests/lab*.test.mjs",
+@@ -30,7 +30,8 @@
+     "test:incident": "node --test tests/incident042*.test.mjs",
+     "bench:incident": "node scripts/incident-v042.mjs",
+     "test:browser:042": "python scripts/browser-v042.py",
+-    "probe:child": "node scripts/probe-child-v042.mjs"
++    "probe:child": "node scripts/probe-child-v042.mjs",
++    "test:browser:043": "python scripts/browser-v043.py"
+   },
+   "devDependencies": {
+     "typescript": "5.8.3"
+diff --git a/public/app.css b/public/app.css
+--- a/public/app.css
++++ b/public/app.css
+@@ -37,3 +37,6 @@
+ .lab-world,.lab-evidence{min-width:0}.lab-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;background:#dbe5ca;border:6px solid #dbe5ca;border-radius:12px;margin:10px 0}.lab-tile{aspect-ratio:1;position:relative;display:flex;align-items:center;justify-content:center;border-radius:5px;background:#eaf0dd}.lab-tile small{position:absolute;top:2px;left:3px;font-size:7px;color:#9aa98a}.lab-tile svg{width:23px;height:23px;color:#b66d62}.lab-tile.is-home svg{color:#9c785b}.lab-tile.is-wall{background:#cbbba3}.lab-tile.is-wall svg{color:#8e775d}.mini-tuanzi{position:absolute;width:24px;height:24px;top:50%;left:50%;transform:translate(-50%,-35%);display:flex;align-items:center;justify-content:center;gap:5px;background:#fff8e8;border-radius:50%;box-shadow:0 3px 3px #52664733;border:1px solid #e9dcca}.mini-tuanzi i{width:3px;height:4px;border-radius:50%;background:#35422e}.lab-resources{font-size:13px;font-weight:600;color:#577046}.lab-world p{font-size:12px;line-height:1.7;color:#7b856e}.lab-world input[type=range]{width:100%;accent-color:#547645}.lab-measures{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.lab-measures div{display:flex;flex-direction:column;border-radius:9px;background:#f3f5ec;padding:13px 10px;gap:7px}.lab-measures b{font-size:23px;line-height:1;color:#34553c;font-variant-numeric:tabular-nums}.lab-measures span{font-size:10px;color:#8b947f}.lab-flow{margin:14px 0;padding:13px 15px;border-radius:9px;background:#eaf0e3;color:#5a7051;font-size:12px;line-height:1.8;overflow-wrap:anywhere}.lab-verdict{font-size:13px;color:#3c5440;line-height:1.8}.lab-evidence details{margin-top:15px;font-size:12px;color:#76856a}.lab-evidence summary{cursor:pointer}.lab-evidence pre{max-height:330px;max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;background:#f4f5ee;padding:15px;border-radius:8px}.lab-boundary{border-top:1px dashed #dce2d1;padding-top:15px;margin:18px 0 0;font-size:11px;color:#8c9581;line-height:1.8}.lab-table-scroll{max-width:100%;overflow-x:auto}.lab-comparison{margin-top:20px}.lab-comparison table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}.lab-comparison th{font-size:11px;font-weight:500;color:#8a967f;padding:10px}.lab-comparison td{padding:13px 10px;border-top:1px solid #e4e8da;white-space:nowrap;color:#526847}.lab-row{border:0;background:none;padding:0;color:#345b3f;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:#c5d3b9;text-underline-offset:3px}
+ @media(max-width:950px){.lab-controls{grid-template-columns:repeat(3,1fr)}.lab-body{grid-template-columns:260px 1fr;gap:18px}.lab-measures{grid-template-columns:repeat(3,1fr)}}
+ @media(max-width:600px){.decision-lab{padding:18px;margin:20px 0;border-radius:14px}.lab-heading{flex-direction:column;gap:0}.lab-heading h2{font-size:21px}.lab-heading .tag{margin-bottom:12px}.lab-controls{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.lab-body{grid-template-columns:minmax(0,1fr)}.lab-world{max-width:100%}.lab-measures{grid-template-columns:repeat(3,minmax(0,1fr))}.lab-options{gap:10px}.lab-options span{margin:0}.lab-buttons .btn{font-size:12px;padding:10px}.lab-controls label:last-child{grid-column:span 2}.lab-flow{font-size:11px}.lab-heading p{margin-bottom:10px}}
++/* v0.4.3: one local experiment context per view. */
++[hidden]{display:none!important}.local-scope-nav{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:10px 0 22px;border-bottom:1px solid #dce3d4;margin-bottom:25px}.local-kicker{font-size:12px;font-weight:650;color:#4d6b3e}.local-scope-nav p{font-size:11px;color:#75836e;margin:5px 0 0}.local-tabs{display:flex;gap:3px;background:#e8eee0;padding:4px;border-radius:10px}.local-tabs button{border:0;background:transparent;padding:10px 15px;border-radius:7px;color:#687e57;font-size:13px;cursor:pointer;white-space:nowrap}.local-tabs button[aria-selected=true]{background:#fcfdf8;color:#2c4e35;box-shadow:0 1px 4px #35472b17}.local-shared-link{font-size:11px;color:#4c6942;white-space:nowrap}.local-lab-advanced{border:1px solid #dce3d4;background:#f8faf2;border-radius:10px;padding:12px 16px;margin:14px 0}.local-lab-advanced summary{font-size:12px;color:#617452;cursor:pointer}.local-lab-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.local-lab-fields label{font-size:12px}.local-lab-fields .lab-options{grid-column:1/-1}.local-lab-fields select{display:block;width:100%;padding:9px;margin-top:6px;border:1px solid #d6dfcc;border-radius:7px;background:#fff}.local-tabs button:focus-visible{outline:3px solid #a6bb83;outline-offset:2px}
++@media(max-width:760px){.local-scope-nav{flex-wrap:wrap;gap:12px}.local-scope-nav>div:first-child{width:100%}.local-tabs{flex:1}.local-tabs button{flex:1;padding:10px 12px;font-size:12px}.local-shared-link{font-size:10px}.local-lab-fields{grid-template-columns:1fr}.local-lab-fields .lab-options{grid-column:1}.local-lab-advanced{padding:12px}.local-scope-nav p{font-size:10px}}
+diff --git a/public/index.html b/public/index.html
+--- a/public/index.html
++++ b/public/index.html
+@@ -4,7 +4,7 @@
+   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <meta name="theme-color" content="#304b38">
+   <meta name="description" content="别让团子饿死：一个能干预世界、观察候选与策略更新的 G/S 引擎实验台。默认离线程序搜索，无需 API Key。">
+-  <title>团子 v0.4.2 · G/S 离线试玩</title>
++  <title>团子 v0.4.3 · G/S 离线试玩</title>
+   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23304b38'/%3E%3Cellipse cx='32' cy='37' rx='20' ry='18' fill='%23fff7e7'/%3E%3Ccircle cx='26' cy='37' r='2' fill='%23304b38'/%3E%3Ccircle cx='38' cy='37' r='2' fill='%23304b38'/%3E%3Cpath d='M32 20Q31 7 47 10Q47 21 32 20' fill='%23a7c17c'/%3E%3C/svg%3E">
+   <link rel="stylesheet" href="./app.css">
+ </head>
+diff --git a/public/lab.css b/public/lab.css
+--- a/public/lab.css
++++ b/public/lab.css
+@@ -1,4 +1,7 @@
+-:root{font-family:Inter,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#283e31;background:#f5f5ed;font-size:14px;--line:#e0e4d7;--muted:#788574;--green:#304b38;--soft:#eaf0e0;--amber:#936840}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button,a{touch-action:manipulation}button{border:1px solid var(--line);border-radius:9px;padding:9px 13px;background:#fff;color:var(--green);cursor:pointer;font-weight:550;transition:background .15s}button:hover:not(:disabled){background:#edf3e7}button:disabled{opacity:.38;cursor:not-allowed}.primary{background:var(--green);color:white;border-color:var(--green)}.primary:hover:not(:disabled){background:#466248}.danger{color:#915747}a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}input,select{min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px;background:#fff;color:#304734;width:100%}label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}h1,h2,h3,p{margin:0}header{display:flex;justify-content:space-between;align-items:center;padding:22px 30px;border-bottom:1px solid var(--line);background:#fbfbf6}.brand{display:flex;align-items:center;gap:12px}.mark{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#304b38;color:#e9f2d4;font-weight:800;font-size:22px}.brand-name{font-size:15px;font-weight:750;letter-spacing:.09em}.subbrand{color:var(--muted);font-size:10px;letter-spacing:.12em;margin-top:4px}.header-right{display:flex;align-items:center;gap:17px;font-size:12px}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#f4f7ed;border-radius:30px;padding:5px 9px;font-size:11px;white-space:nowrap}.dot{width:6px;height:6px;background:#809866;border-radius:50%}.dot.off{background:#b18463}.layout{display:grid;grid-template-columns:240px minmax(400px,1fr) 300px;gap:20px;max-width:1660px;margin:auto;padding:24px}.sidebar,.details{min-width:0}.panel{background:#fdfef9;border:1px solid var(--line);border-radius:16px;padding:17px;margin-bottom:16px}.panel h2{font-size:14px;font-weight:650}.panel h3{font-size:12px;letter-spacing:.05em}.eyebrow{font-size:10px;color:#8b967f;letter-spacing:.16em;font-weight:650;margin-bottom:9px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.runs{margin-top:12px;max-height:330px;overflow:auto}.run-link{display:block;text-align:left;width:100%;margin:6px 0;padding:11px;border-radius:11px;font-weight:400;overflow:hidden}.run-link.active{border-color:#94aa7c;background:#edf2e5}.run-link strong{display:block;font-size:12px;margin-bottom:4px}.run-link small{display:block;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis}.empty-note{font-size:12px;color:var(--muted);line-height:1.8;padding:14px 0}.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.config-grid label{margin-top:5px}.checkbox{display:flex;align-items:center;gap:7px;line-height:1.6}.checkbox input{width:auto}details{margin-top:12px}summary{cursor:pointer;font-size:12px;color:#6b7c62}.hint{font-size:11px;color:var(--muted);line-height:1.7;margin-top:10px}.full{width:100%;margin-top:15px}.stage-head{margin:2px 0 17px}.stage-head h1{font-size:25px;font-weight:650;letter-spacing:-.04em;margin:4px 0 9px}.stage-head p{font-size:12px;color:var(--muted);line-height:1.8;overflow-wrap:anywhere}.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:13px 0}.scene{border:1px solid #d8e0cf;border-radius:18px;overflow:hidden;background:#eff3e7;position:relative}.scene canvas{width:100%;aspect-ratio:866/578;display:block}.scene-footer{display:flex;justify-content:space-between;padding:10px 14px;background:#f8faf0;border-top:1px solid #e0e6d7;font-size:11px;color:#718068}.scene-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#f1f4e9ee;padding:25px;gap:13px}.scene-overlay.hidden{display:none}.scene-overlay h2{font-size:21px}.scene-overlay p{max-width:370px;font-size:13px;color:#7c8975;line-height:1.9}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:13px 0}.stat{border:1px solid var(--line);border-radius:12px;background:#fdfef9;padding:12px}.stat .value{font-size:23px;font-weight:600;font-variant-numeric:tabular-nums}.stat .label{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5}.owner-box{padding:12px;background:#edf2e4;border-radius:10px;margin-top:12px;font-size:12px;line-height:1.8;overflow-wrap:anywhere}.owner-box span{color:var(--muted);font-size:11px}.metric-row{display:flex;justify-content:space-between;gap:12px;font-size:11px;line-height:2.1}.metric-row span{color:var(--muted)}.metric-row b{font-weight:550;text-align:right;overflow-wrap:anywhere;max-width:65%}.code{font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;margin-top:12px;padding:12px;background:#f2f4ed;border-radius:10px;color:#526447}.activity{max-height:260px;overflow:auto;margin-top:12px}.activity-item{display:grid;grid-template-columns:40px 1fr;gap:7px;padding:7px 0;border-bottom:1px solid #eef0e8;font-size:11px}.activity-item small{color:#8e9a86;font-family:monospace}.activity-item b{font-weight:500;overflow-wrap:anywhere}.activity-item p{color:#8b9683;font-size:10px;line-height:1.5}.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.tabs button{font-size:11px;padding:6px 10px}.replay-bar{background:#e8eedf;padding:11px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:11px;margin:12px 0}.replay-bar input{padding:0}.hidden{display:none!important}.notice{background:#f3ede0;border:1px solid #e7dcc4;border-radius:10px;padding:12px;line-height:1.7;font-size:11px;color:#8a724a;margin-top:12px}.footer{padding:18px 30px;text-align:center;border-top:1px solid var(--line);color:#8a957f;font-size:11px;line-height:1.9}#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#304b38;color:#fff;max-width:min(600px,90vw);padding:14px 20px;border-radius:13px;box-shadow:0 5px 20px #1c311c24;font-size:12px;z-index:100;line-height:1.7}.spin{animation:pulse 1.5s ease-in-out infinite}@keyframes pulse{50%{opacity:.4}}.connection-error{margin:20px;max-width:600px;line-height:1.8}.small{font-size:11px}.import{display:inline-block;margin-top:8px;font-size:11px}.import input{font-size:11px;padding:5px;margin-top:5px}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #aec886;outline-offset:2px}@media(min-width:1500px){.layout{grid-template-columns:250px minmax(550px,1fr) 310px;gap:24px}}@media(max-width:1150px){.layout{grid-template-columns:220px minmax(0,1fr);padding:18px;gap:16px}.details{grid-column:2;display:grid;grid-template-columns:1fr 1fr;gap:14px}.details .panel{margin:0}.details .wide{grid-column:1/-1}.sidebar{grid-row:span 2}}@media(max-width:730px){header{padding:16px}.subbrand{font-size:8px}.header-right{gap:8px;font-size:10px}.layout{display:flex;flex-direction:column;padding:12px;gap:12px}.main-stage{order:0}.sidebar{order:1;display:grid;grid-template-columns:1fr 1fr;gap:12px}.details{order:2;grid-template-columns:1fr}.details .wide{grid-column:1}.sidebar .panel{padding:12px;margin:0}.stage-head h1{font-size:22px}.stats{gap:6px}.stat{padding:9px}.stat .value{font-size:20px}.toolbar button{font-size:12px;padding:8px 10px}.footer{padding:15px}.header-right .legacy-link{display:none}.scene-footer{font-size:10px}.sidebar .config-grid{grid-template-columns:1fr}.run-link strong{font-size:11px}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+-
+-/* v0.4.2: exact stop cause stays readable on narrow screens. */
+-#stop-detail{margin:10px 0;overflow-wrap:anywhere;line-height:1.65} .metric-row b{overflow-wrap:anywhere;max-width:64%;text-align:right}
++:root{--ink:#203b31;--muted:#607369;--line:#dee5dd;--green:#294d3c;--pale:#eef3e9;--paper:#fffefa;--bg:#f6f7f2;--warn:#8b5524;--warn-bg:#fbf1e4;--shadow:0 20px 65px #1833291f;font-family:Inter,-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);font-size:14px;line-height:1.6;font-synthesis:none}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit;color:inherit}button,a{touch-action:manipulation}button{cursor:pointer;border:1px solid var(--line);border-radius:9px;background:var(--paper);padding:9px 15px;line-height:1.4;font-weight:550;transition:background .15s,border-color .15s}button:hover:not(:disabled){background:#edf2e7;border-color:#afc0b0}button:disabled{opacity:.45;cursor:not-allowed}.primary{background:var(--green);color:#fff;border-color:var(--green)}.primary:hover:not(:disabled){background:#3c614e}.quiet{background:transparent}.text-button{border:0;background:transparent;padding:4px 0;color:#466855;font-size:13px;text-align:left}.text-button:hover:not(:disabled){background:transparent;text-decoration:underline;border:0}.icon-button{width:36px;height:36px;display:grid;place-items:center;padding:0;font-size:23px;background:transparent;flex:none}.danger{color:#964632}a{color:inherit;text-decoration:none}a:hover{text-decoration:underline}h1,h2,h3,p{margin:0}h1{font-size:30px;line-height:1.3;font-weight:650;letter-spacing:-.8px}h2{font-size:17px;line-height:1.4;font-weight:650}h3{font-size:15px;font-weight:650}label{display:block;font-weight:550;font-size:13px;margin:14px 0 6px}input,select,textarea{width:100%;min-width:0;background:#fff;border:1px solid #ced8cf;border-radius:8px;padding:10px 12px}select{padding-right:30px}textarea{resize:vertical}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #a4ba83;outline-offset:3px}.hidden{display:none!important}.muted{color:var(--muted)}.spacer{flex:1}.mono,code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.row{display:flex;gap:18px;align-items:center;justify-content:space-between}.overline{font-size:11px;letter-spacing:.12em;color:#7a8c7b;margin-bottom:9px;font-weight:650}.site-header{height:82px;padding:0 max(28px,calc((100vw - 1376px)/2));display:flex;align-items:center;gap:44px;border-bottom:1px solid var(--line);background:#fcfdf9}.brand{display:flex;align-items:center;gap:11px;flex:none}.brand-mark{width:39px;height:39px;background:var(--green);color:#f1f8e4;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:23px;letter-spacing:-1.5px}.brand b{display:block;font-size:16px;font-weight:700}.brand small{display:block;font-size:10px;color:#708171;letter-spacing:.08em;margin-top:1px}.brand:hover{text-decoration:none}.top-nav{display:flex;align-items:center;gap:25px}.nav-link{border:0;background:none;padding:9px 0;color:var(--muted);font-weight:500}.nav-link.active{color:var(--green)}.header-end{margin-left:auto;display:flex;align-items:center;gap:17px}.version{font-size:11px;color:#889486}.connection-pill{display:inline-flex;gap:7px;align-items:center;font-size:12px;color:#586d5e}.connection-pill i{width:7px;height:7px;border-radius:50%;background:#70945a}.connection-pill i.offline{background:#ad7545}.container{max-width:1320px;padding:34px 32px 50px;margin:auto;min-height:calc(100vh - 160px)}.page-intro{display:flex;justify-content:space-between;gap:40px;align-items:flex-end;padding:18px 0 40px}.lead{font-size:14px;color:var(--muted);margin-top:12px}.intro-note{display:flex;align-items:flex-start;gap:11px;border-left:1px solid var(--line);padding:8px 0 8px 26px;font-size:12px;line-height:1.8;color:var(--muted)}.note-dot{width:7px;height:7px;margin-top:7px;background:#8ca66d;border-radius:50%}.list-tools{display:flex;align-items:center;gap:12px;margin-bottom:22px}.search-field{display:flex;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding-left:14px;width:300px}.search-field span{font-size:22px;color:#879581}.search-field input{border:0;background:transparent}.list-tools>select{width:155px;font-size:13px}.list-tools .muted{font-size:12px}.list-table-heading,.run-row{display:grid;grid-template-columns:minmax(230px,1.4fr) 150px minmax(180px,1fr) minmax(145px,.8fr) 25px;gap:24px;align-items:center}.list-table-heading{padding:0 24px 11px;color:#7a8b7a;font-size:11px}.run-list{border:1px solid var(--line);border-radius:15px;overflow:hidden;background:var(--paper)}.run-row{border:0;border-bottom:1px solid #e7ece3;border-radius:0;width:100%;padding:23px 24px;text-align:left;font-weight:400}.run-row:last-child{border-bottom:0}.run-row:hover:not(:disabled){background:#f0f4eb}.run-name{display:flex;align-items:center;gap:15px;min-width:0}.run-icon{display:grid;place-items:center;background:#eef3e8;width:42px;height:42px;border-radius:11px;color:#577851;font-size:23px;flex:none}.run-name strong{display:block;font-size:15px;font-weight:600}.run-name small{display:block;font-size:12px;color:var(--muted);margin-top:4px}.run-id-small{display:block;font-size:10px;margin-top:3px;color:#8a958b}.row-model{font-size:13px}.row-owner{font-size:13px;overflow-wrap:anywhere}.row-model small,.row-owner small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.row-arrow{color:#819278;font-size:21px}.list-bottom{display:flex;justify-content:space-between;gap:20px;color:var(--muted);font-size:12px;padding-top:22px}.badge{display:inline-flex;align-items:center;border-radius:6px;background:#edf1e9;color:#627460;font-size:12px;font-weight:550;padding:5px 10px;white-space:nowrap}.badge.active{background:#e4efdd;color:#466d35}.badge.warning{background:var(--warn-bg);color:var(--warn)}.badge.success{background:#e6efe2;color:#3e693c}.empty-state{text-align:center;padding:65px 30px;background:linear-gradient(145deg,#fafbf6,#f2f5eb)}.empty-symbol{font-size:40px;color:#94ac7b;display:block;margin-bottom:15px}.empty-state p{color:var(--muted);font-size:13px;margin:12px auto 23px;max-width:580px;line-height:1.9}.small-empty{border:1px dashed var(--line);border-radius:12px;margin-top:20px}.breadcrumbs{display:flex;align-items:center;gap:10px;font-size:12px;color:#849181;margin-bottom:22px}.breadcrumbs .text-button{font-size:12px}.run-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:30px}.title-line{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.run-heading h1{font-size:29px}.goal{font-size:14px;color:var(--muted);margin-top:11px}.run-heading-meta{text-align:right;font-size:12px;padding-top:6px;max-width:345px;overflow-wrap:anywhere}.owner{font-size:13px;font-weight:550}.run-heading-meta p{color:var(--muted);margin-top:7px}.run-tags{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:11px;color:#6b7d6b;margin-top:16px}.run-tags span+span:before{content:'·';margin-right:14px;color:#a0ad98}.run-tags .tag-warning{color:var(--warn)}.run-navigation{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--line);margin-top:25px}.tabs{display:flex;gap:28px;align-self:stretch}.tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;padding:16px 1px;background:transparent;color:#728370;font-size:14px;white-space:nowrap}.tabs button[aria-selected=true]{border-bottom-color:var(--green);color:var(--green);font-weight:650}.tabs button:hover:not(:disabled){background:none;border-bottom-color:#9bb391}.small-dot{width:6px;height:6px;background:#c28c49;display:inline-block;border-radius:50%;margin-left:3px;vertical-align:middle}.toolbar{display:flex;gap:8px;align-items:center}.toolbar button{padding:8px 13px;font-size:12px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);margin:22px 0 25px;padding:18px 0;border:1px solid var(--line);border-radius:12px;background:#fcfdf8}.metrics>div{padding:0 24px;border-right:1px solid var(--line);min-width:0}.metrics>div:last-child{border-right:0}.metrics small{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}.metrics strong{display:block;font-weight:600;font-size:25px;letter-spacing:-.5px;line-height:1.3;font-variant-numeric:tabular-nums}.metrics span{display:block;font-size:10px;color:#7b8c76;margin-top:6px}.overview-grid{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(285px,1fr);gap:22px}.world-panel{min-width:0;background:#f9fbf2;border:1px solid var(--line);border-radius:14px;overflow:hidden}.section-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:18px}.section-heading h2{font-size:15px}.section-heading p{font-size:12px;color:var(--muted);margin-top:5px}.world-panel>.section-heading{padding:15px 20px;border-bottom:1px solid #e3e9d9;background:#f9fbf4}.subtle-tag{font-size:10px;color:#7b8b72;white-space:nowrap}.world-scene{position:relative;background:#f2f5e9}.world-scene canvas{display:block;width:100%;aspect-ratio:866/578}.scene-footer{display:flex;justify-content:space-between;padding:11px 18px;font-size:10px;color:#70816a;border-top:1px solid #e3e9d9;background:#f9fbf4}.process-panel{border:1px solid var(--line);border-radius:14px;background:var(--paper);padding:21px 23px;display:flex;flex-direction:column;min-width:0}.process-panel .section-heading{padding-bottom:24px}.goal-ladder{padding:0}.ladder-row{display:flex;gap:13px;position:relative;padding-bottom:25px}.ladder-row:after{content:'';position:absolute;left:13px;top:30px;bottom:4px;width:1px;background:#dbe3d4}.ladder-row.last:after{display:none}.ladder-node{display:grid;place-items:center;width:27px;height:27px;flex:none;border-radius:50%;background:#eef2e7;border:1px solid #d9e3d1;font-size:11px;font-weight:600;color:#5d7850}.ladder-node.root{background:#dfe9d6}.ladder-row small{font-size:10px;color:#829078;display:block;margin:1px 0 7px}.ladder-row p{font-size:12px;line-height:1.85}.ladder-row h3{font-size:14px;margin-bottom:5px}.process-status{margin-top:auto;display:flex;gap:10px;padding:13px;background:#f0f4e9;border-radius:9px}.process-status i{width:7px;height:7px;border-radius:50%;background:#8b9b7b;margin-top:7px;flex:none}.process-status .working{background:#698f53;animation:pulse 1.7s ease-in-out infinite}.process-status strong{font-size:12px;font-weight:600}.process-status p{font-size:11px;line-height:1.8;color:#73806a;margin-top:4px}.process-panel>.text-button{margin-top:15px}.process-boundary{font-size:10px;color:#899580;margin-top:10px}.timeline-section{margin-top:28px}.key-timeline{border-top:1px solid var(--line)}.timeline-item{border:0;border-bottom:1px solid #e5eade;border-radius:0;background:transparent;width:100%;display:flex;gap:14px;padding:13px 4px;align-items:center;text-align:left;font-weight:400}.timeline-item>span:nth-child(2){flex:1;min-width:0}.timeline-item b{font-size:12px;font-weight:550;display:block}.timeline-item small{display:block;color:var(--muted);font-size:11px;margin-top:3px;overflow-wrap:anywhere}.timeline-item time,.timeline-item>.mono{color:#83917b;font-size:10px;flex:none}.timeline-dot{width:6px;height:6px;background:#9caa8c;border-radius:50%;margin:0 8px;flex:none}.timeline-item.warning .timeline-dot{background:#bf945f}.timeline-item.success .timeline-dot{background:#6d915b}.timeline-item>span:last-child{color:#87997d;font-size:16px}.status-summary{display:flex;justify-content:space-between;align-items:center;gap:24px;border:1px solid var(--line);border-radius:12px;padding:18px 22px;margin-bottom:23px;background:#eff4e9}.status-summary h2{font-size:15px;margin-bottom:5px}.status-summary p{font-size:12px;line-height:1.8;color:#64775e}.status-summary code{font-size:10px;display:block;margin-top:5px;overflow-wrap:anywhere;color:#94744e}.status-summary.warning{background:#fcf3e7;border-color:#e8d6bc}.status-summary.warning h2{color:#82572e}.status-summary.warning p{color:#876b4c}.status-summary.success{background:#ebf2e5}.status-summary .quiet{flex:none;font-size:12px}.replay-bar{display:flex;align-items:center;gap:13px;border:1px solid #cfddc8;background:#edf4e7;padding:13px 18px;border-radius:10px;margin-top:20px}.replay-bar b{font-size:12px;display:block;white-space:nowrap}.replay-bar small{display:block;color:var(--muted);font-size:10px;min-width:230px}.replay-bar input{padding:0;accent-color:var(--green)}.replay-bar .mono{font-size:11px;white-space:nowrap}.replay-bar .quiet{font-size:11px;white-space:nowrap}.section-intro{padding:28px 0 20px}.section-intro p{color:var(--muted);font-size:13px;margin-top:9px}.section-intro h2{font-size:21px}.facts-grid{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 28px;padding:20px 0}.facts-grid>div{min-width:0}.facts-grid dt{font-size:11px;color:var(--muted);margin-bottom:4px}.facts-grid dd{margin:0;font-size:13px;line-height:1.8;overflow-wrap:anywhere}.decision-summary{margin-top:23px;border-left:3px solid #90a873;padding:10px 20px;background:#f0f4e9}.decision-summary h3{font-size:16px;margin:8px 0}.decision-summary p{font-size:12px;color:var(--muted)}.candidate-table{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--paper)}.candidate-row{display:flex;align-items:center;gap:15px;padding:15px 20px;border-bottom:1px solid var(--line)}.candidate-row:last-child{border-bottom:0}.candidate-row.chosen{background:#eaf2e1}.candidate-row>div{flex:1;min-width:0}.candidate-row b{font-weight:550;font-size:13px}.candidate-row small{display:block;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.candidate-row>span:nth-last-child(2){font-variant-numeric:tabular-nums;font-size:12px;min-width:55px}.candidate-marker{font-size:16px;color:#587e45}.candidate-row .text-button{font-size:11px}.evidence-actions{display:flex;gap:24px;flex-wrap:wrap;margin:20px 0}.evidence-details{margin-top:24px;border:1px solid var(--line);border-radius:10px;padding:15px 18px;background:#fafcf6}.evidence-details>summary{cursor:pointer;font-size:13px;color:#57734e}.evidence-details[open]>summary{margin-bottom:14px}.full-timeline{max-height:520px;overflow:auto}.config-columns{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:0 0 20px}.surface{padding:23px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}.surface h3{border-bottom:1px solid var(--line);padding-bottom:13px}.surface .facts-grid{padding-bottom:0}.diagnostic-verdict{border:1px solid var(--line);background:#f0f4e9;border-radius:12px;padding:22px;margin-bottom:22px}.diagnostic-verdict.warning{background:#fcf3e7;border-color:#e8d6bc}.diagnostic-verdict h3{font-size:19px;margin-bottom:9px}.diagnostic-verdict p{font-size:13px;color:#6c755f;line-height:1.85}.diagnostic-verdict code{display:block;margin-top:10px;font-size:12px;overflow-wrap:anywhere}.lineage{margin-bottom:22px}.site-footer{max-width:1256px;margin:0 auto;padding:19px 0 24px;border-top:1px solid var(--line);font-size:10px;color:#84917d;display:flex;justify-content:space-between;gap:15px}.site-footer .text-button{font-size:10px;display:inline}.callout{padding:15px 18px;border:1px solid var(--line);border-radius:10px;background:#eef3e8;font-size:12px;line-height:1.85;margin:20px 0}.callout.warning{background:#fbf1e4;border-color:#e6d5bb;color:#875b32}.callout p{margin-top:5px}.field-help,.empty-note{font-size:12px;color:var(--muted);line-height:1.85;margin-top:12px}.empty-note{padding:28px 0}.inline-error{background:#fff0e9;color:#984326;border:1px solid #e8c8b8;padding:10px 14px;margin-top:14px;border-radius:8px;font-size:12px;overflow-wrap:anywhere}.creation-summary{font-size:12px;line-height:1.9;padding:16px;border:1px dashed #becdb4;border-radius:9px;background:#f3f7ed;margin-top:20px}dialog{width:min(750px,calc(100vw - 32px));max-height:calc(100dvh - 48px);padding:0;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);overflow:auto}dialog::backdrop{background:#1f362e69;backdrop-filter:blur(3px)}.dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:25px 28px 20px;border-bottom:1px solid var(--line);background:var(--paper)}.dialog-head h2{font-size:23px}.dialog-body{padding:24px 28px}.dialog-body>p{font-size:13px;line-height:1.9;color:var(--muted)}.dialog-footer{padding:17px 28px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;align-items:center;gap:11px;background:#fafcf5;position:sticky;bottom:0}.dialog-footer>span{margin-right:auto;font-size:11px;color:var(--muted)}.scope-choices{display:grid;grid-template-columns:1fr 1fr;gap:14px}.scope-card{padding:18px;border:1px solid #dce5d4;border-radius:11px;margin:0;display:grid;grid-template-columns:18px 1fr;gap:5px 9px;cursor:pointer;background:#fafcf6}.scope-card:has(input:checked){border-color:#8ca977;background:#eef4e7;box-shadow:inset 0 0 0 1px #8ca977}.scope-card input{width:auto;margin:3px 0 0;accent-color:var(--green)}.scope-card b{font-size:14px}.scope-card span{grid-column:2;font-size:11px;font-weight:400;color:var(--muted);line-height:1.7}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}.checkbox{display:flex;gap:9px;font-size:12px;align-items:flex-start;line-height:1.8;cursor:pointer}.checkbox input{width:auto;margin-top:4px;accent-color:var(--green)}.compact-dialog{width:min(520px,calc(100vw - 32px))}.wide-dialog{width:min(990px,calc(100vw - 32px))}.action-list{display:grid;gap:8px}.action-choice{text-align:left;padding:15px 17px;background:#fcfdf8;border:1px solid var(--line);display:block}.action-choice b{display:block;font-size:14px}.action-choice span{display:block;color:var(--muted);font-weight:400;font-size:11px;margin-top:5px}.action-choice:disabled{display:none}.help-content h3{margin:22px 0 10px}.help-content h3:first-child{margin-top:0}.code{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.9;background:#eef2e7;padding:18px;border-radius:10px;overflow:auto;max-height:62vh;margin:0}#toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:150;background:#254333;color:#fff;max-width:min(650px,90vw);padding:14px 20px;border-radius:12px;box-shadow:var(--shadow);font-size:13px;overflow-wrap:anywhere}.skip-link{position:fixed;top:-80px;left:16px;background:#203b31;color:#fff;padding:12px;z-index:200}.skip-link:focus{top:10px}@keyframes pulse{50%{opacity:.3}}
++@media(min-width:1600px){.container{max-width:1430px}.site-footer{max-width:1366px}.overview-grid{grid-template-columns:minmax(0,1.95fr) minmax(320px,1fr)}}
++@media(max-width:1100px){.site-header{gap:25px;padding:0 24px}.top-nav{gap:16px}.secondary-link{display:none}.container{padding:26px 24px 38px}.page-intro{gap:24px}.intro-note{max-width:295px}.list-table-heading,.run-row{grid-template-columns:minmax(210px,1.3fr) 115px minmax(145px,1fr) 135px 15px;gap:12px}.run-row{padding:20px 18px}.overview-grid{gap:16px;grid-template-columns:minmax(0,1.6fr) minmax(265px,1fr)}.process-panel{padding:18px}.metrics>div{padding:0 18px}.tabs{gap:23px}.site-footer{margin:0 24px}}
++@media(max-width:850px){.header-end .version,.intro-note,.top-nav{display:none}.site-header{height:72px}.connection-pill{font-size:11px}.header-end{gap:12px}.container{padding-top:22px}.page-intro{padding:10px 0 28px}.list-table-heading{display:none}.run-row{grid-template-columns:minmax(210px,1fr) 120px 130px;gap:14px}.row-model,.row-arrow{display:none}.run-navigation{flex-wrap:wrap;gap:0}.tabs{flex:1}.toolbar{margin:10px 0}.run-heading{gap:20px}.run-heading-meta{max-width:220px}.overview-grid{grid-template-columns:minmax(0,1fr) 280px}.process-panel{padding:16px}.ladder-row{padding-bottom:17px}.ladder-row p{font-size:11px}.metrics strong{font-size:23px}.metrics span{font-size:10px}.status-summary{gap:12px;padding:15px}.replay-bar small{min-width:140px}.list-tools{flex-wrap:wrap}.list-tools .search-field{flex:1;min-width:190px}.list-tools .spacer{display:none}}
++@media(max-width:680px){:root{font-size:14px}.site-header{padding:0 17px;height:70px;gap:12px}.brand-mark{width:35px;height:35px;font-size:21px}.brand b{font-size:14px}.brand small{font-size:8px}.header-end{gap:9px}.header-end>.primary{font-size:11px;padding:9px 11px}.connection-pill{max-width:88px;line-height:1.4;font-size:10px;gap:4px}.connection-pill i{flex:none}.container{padding:21px 17px 32px;min-height:calc(100vh - 190px)}h1{font-size:25px}.page-intro .overline{font-size:10px}.lead{font-size:12px;line-height:1.85}.page-intro{padding:5px 0 24px}.list-tools{gap:10px}.search-field{width:auto}.list-tools select{width:130px;font-size:12px}.list-tools .quiet{font-size:12px;padding:7px 10px}.list-table-heading{display:none}.run-row{grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:17px 15px}.run-name{gap:10px}.run-icon{width:35px;height:35px;border-radius:9px;font-size:19px}.run-name strong{font-size:14px}.run-name small{font-size:10px}.run-id-small{display:none}.row-owner{grid-column:1/-1;margin-left:45px;margin-top:-8px;display:flex;gap:12px;font-size:11px}.row-owner small{margin:0}.row-model,.row-arrow{display:none}.badge{font-size:11px;padding:4px 8px}.list-bottom{display:block;font-size:11px}.list-bottom .text-button{margin-top:6px;font-size:12px}.breadcrumbs{margin-bottom:18px}.run-heading{display:block}.title-line{gap:10px}.run-heading h1{font-size:27px}.goal{font-size:13px;line-height:1.9;margin-top:9px}.run-heading-meta{text-align:left;max-width:none;margin-top:14px;padding:0;display:flex;flex-wrap:wrap;gap:5px 15px}.owner{font-size:11px}.run-heading-meta p{font-size:11px;margin:0}.run-tags{font-size:10px;gap:6px 9px;margin-top:12px}.run-tags span+span:before{margin-right:9px}.run-navigation{margin-top:18px}.tabs{width:100%;display:grid;grid-template-columns:repeat(4,1fr);gap:0;order:0}.tabs button{font-size:13px;padding:13px 0}.toolbar{width:100%;justify-content:flex-end;margin:12px 0;order:1}.toolbar button{padding:9px 12px;font-size:12px}.metrics{grid-template-columns:1fr 1fr;padding:0;margin:18px 0;gap:0}.metrics>div{padding:13px 16px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.metrics>div:nth-child(2){border-right:0}.metrics>div:nth-child(n+3){border-bottom:0}.metrics strong{font-size:23px}.metrics small{font-size:10px}.metrics span{font-size:10px}.overview-grid{display:flex;flex-direction:column;gap:17px}.section-heading h2{font-size:14px}.world-panel>.section-heading{padding:13px 15px}.scene-footer{padding:9px 12px;font-size:9px;gap:8px}.world-scene canvas{aspect-ratio:866/578}.process-panel{padding:18px}.process-panel .section-heading{padding-bottom:20px}.ladder-row{padding-bottom:20px}.ladder-row p{font-size:12px}.ladder-row small{font-size:10px}.process-status{padding:12px}.process-boundary{font-size:10px}.timeline-section{margin-top:24px}.timeline-section .section-heading{align-items:flex-start}.timeline-section .section-heading p{font-size:11px}.timeline-section .text-button{font-size:11px;white-space:nowrap}.timeline-item{gap:10px;padding:12px 2px}.timeline-item small{font-size:10px}.timeline-dot{margin:0 4px}.status-summary{display:block;padding:16px}.status-summary h2{font-size:14px}.status-summary p{font-size:12px}.status-summary button{margin-top:12px;font-size:11px}.status-summary code{font-size:10px}.section-intro{padding-top:22px}.section-intro h2{font-size:19px}.section-intro p{font-size:12px;line-height:1.85}.section-intro.row{display:block}.section-intro.row button{margin-top:12px}.facts-grid{gap:16px 18px}.facts-grid dd{font-size:12px}.config-columns{grid-template-columns:1fr;gap:15px}.surface{padding:18px}.surface h3{font-size:14px}.candidate-row{padding:13px 12px;gap:10px;flex-wrap:wrap}.candidate-row>div{min-width:160px}.candidate-row .text-button{margin-left:22px}.candidate-row b{font-size:12px}.candidate-row small{font-size:9px}.evidence-actions{gap:10px 18px}.evidence-actions .text-button{font-size:12px}.replay-bar{flex-wrap:wrap;padding:12px;gap:8px}.replay-bar>div{width:100%}.replay-bar small{min-width:0}.replay-bar input{width:auto;flex:1}.replay-bar .quiet{width:100%;margin-top:4px}.site-footer{display:block;margin:0 17px;font-size:10px}.site-footer>span{display:block;margin-top:5px}.empty-state{padding:40px 20px}.empty-state h2{font-size:17px}.empty-state p{font-size:12px}dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 24px);border-radius:14px}.dialog-head{padding:19px 19px 16px}.dialog-head h2{font-size:21px}.dialog-head .overline{font-size:9px}.dialog-body{padding:20px 19px}.dialog-footer{padding:14px 19px;flex-wrap:wrap}.dialog-footer>span{width:100%;font-size:10px}.dialog-footer button{font-size:12px}.scope-choices{gap:10px}.scope-card{padding:13px 10px;grid-template-columns:16px 1fr;gap:4px 6px}.scope-card b{font-size:13px}.scope-card span{font-size:10px}.form-grid{gap:0 12px}.dialog-body input,.dialog-body select,.dialog-body textarea{font-size:13px;padding:10px}label{font-size:12px}.dialog-body .evidence-details{padding:12px}.evidence-details summary{font-size:12px}.code{font-size:10px;padding:12px}.help-content p{font-size:12px}.diagnostic-verdict h3{font-size:17px}.diagnostic-verdict code{font-size:11px}.compact-dialog{width:calc(100vw - 24px)}.field-help{font-size:11px}#toast{font-size:12px;width:90vw;bottom:15px}}
++@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
++@media(max-width:680px){#panel-overview{display:flex;flex-direction:column}.overview-grid{display:contents}.world-panel{order:1;margin-top:18px}.metrics{order:2}.process-panel{order:3}.status-summary{order:0;margin:18px 0 0}.timeline-section{order:4}.metrics small{font-size:10px}.metrics strong{font-size:22px}}
+diff --git a/public/lab.html b/public/lab.html
+--- a/public/lab.html
++++ b/public/lab.html
+@@ -1 +1 @@
+-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#304b38"><title>G/S Lab v0.4.2 · Agent 实验观测台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/lab.css"></head><body><div id="lab-app"></div><noscript>需要启用 JavaScript。CLI 与 HTTP API 不依赖网页。</noscript><script src="/lab.js"></script></body></html>
++<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#304b38"><title>G/S Lab v0.4.3 · Agent 实验观测台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/lab.css"></head><body><div id="lab-app"></div><noscript>需要启用 JavaScript。CLI 与 HTTP API 不依赖网页。</noscript><script src="/lab.js"></script></body></html>
+diff --git a/scripts/browser-v04-on-v043.py b/scripts/browser-v04-on-v043.py
+--- /dev/null
++++ b/scripts/browser-v04-on-v043.py
+@@ -0,0 +1,60 @@
++"""Chromium operates delivered standalone bytes. No true model calls or navigation claims."""
++import pathlib,json,sys,os
++from playwright.sync_api import sync_playwright
++R=pathlib.Path(__file__).resolve().parent.parent;checks=[];errors=[];requests=[]
++def check(n,v):
++ checks.append({'name':n,'pass':bool(v)});print(n,bool(v),flush=True);(R/'reports/v043/browser-v04-adapted-progress.json').write_text(json.dumps(checks,ensure_ascii=False,indent=2))
++ if not v:raise AssertionError(n)
++def mount(b,width=1440):
++ p=b.new_page(viewport={'width':width,'height':1100 if width>600 else 844});p.on('pageerror',lambda e:errors.append(str(e)));p.on('request',lambda r:requests.append(r.url));p.set_content((R/'play.html').read_text(),wait_until='load');p.wait_for_function('!!window.gsDecisionLab');return p
++def run(p,compare=False):
++ p.locator('#local-tab-judgment').click()
++ p.locator('#lab-compare' if compare else '#lab-run').click();p.wait_for_function('!document.querySelector("#lab-run").disabled',timeout=60000);return p.evaluate('window.gsDecisionLab.results()')
++try:
++ with sync_playwright() as a:
++  b=a.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox']);p=mount(b)
++  check('v043-visible-version','v0.4.3' in p.title());p.locator('#local-tab-judgment').click()
++  check('new-lab-exists-and-contract-visible',p.locator('#decision-lab').is_visible() and '35' in p.locator('#lab-contract').inner_text())
++  check('unconfigured-providers-disabled',p.locator('#lab-backend option[value="jev"]').evaluate('(e)=>e.disabled') and p.locator('#lab-backend option[value="llm"]').evaluate('(e)=>e.disabled'))
++  p.locator('#local-tab-game').click();p.evaluate('window.tuanziLab.loadScenario("meadow")');p.locator('#btn-step').click();p.wait_for_function('window.tuanziLab.exportTrace().decisionAudit.judgmentRuns.length>0')
++  trace=p.evaluate('window.tuanziLab.exportTrace()');check('task-graphs-actually-integrated-in-parent-child-engine',trace['decisionAudit']['judgmentRuns'][0]['status']=='complete')
++  check('question-version-belongs-to-v04',trace['decisionAudit']['records'][0]['packet']['questionVersion']=='gs/judgments/v04/batch')
++  check('audit-panel-provenance-still-visible',p.locator('#decision-origin').inner_text()=='程序规则')
++  p.locator('#decision-audit-panel summary').click();facts=json.loads(p.locator('#audit-facts').inner_text());check('audit-neutral-facts-are-real',facts['schema']=='gs/decision-packet/v1' and not any('score' in c['facts'] for c in facts['candidates']))
++  with p.expect_download() as d:p.locator('#btn-audit').click()
++  check('main-audit-export',d.value.suggested_filename=='gs-decision-audit-v04.json')
++  main_before=p.evaluate('window.tuanziLab.snapshot()');rows=run(p,True)
++  check('four-row-offline-comparison',len(rows)==4 and p.locator('[data-result]').count()==4)
++  check('four-modes-complete-same-energy-contract',all(x['status']=='succeeded' and x['actions']==2 and x['final']['energy']==40 for x in rows))
++  check('batch-versus-serial-identical-questions-fewer-requests',rows[1]['questions']==rows[2]['questions'] and rows[1]['requests']==2 and rows[2]['requests']==50)
++  check('dependent-rounds-actually-two',all(x['dependencyWaves']==2 for x in rows[3]['runs']))
++  check('same-world-clone-not-main-game-write',p.evaluate('window.tuanziLab.snapshot()')==main_before)
++  check('zero-remote-calls-disclosed',all(x['externalRequests']==0 and x['realModels']=='NOT_RUN' for x in rows))
++  check('reference-bfs-independent-optimum',all(x['oracle']['status']=='OPTIMAL' and x['oracle']['steps']==2 for x in rows))
++  p.locator('[data-result="1"]').click();check('comparison-row-loads-actual-trace','合批' in p.locator('#lab-verdict').inner_text())
++  p.locator('#lab-replay').fill('0');p.locator('#lab-replay').dispatch_event('input');check('replay-is-read-only-main-and-task-evidence',p.evaluate('window.tuanziLab.snapshot()')==main_before and '能量 10' in p.locator('#lab-resources').inner_text())
++  p.locator('#lab-replay').fill('2');p.locator('#lab-replay').dispatch_event('input')
++  with p.expect_download() as d:p.locator('#lab-export').click()
++  check('experiment-evidence-export',d.value.suggested_filename=='gs-judgment-experiments-v04.json')
++  p.locator('#decision-lab').screenshot(path=str(R/'reports/v043/desktop-local-judgment.png'))
++  p.locator('.local-lab-advanced summary').click();p.locator('#lab-strategy').select_option('dependent');p.locator('#lab-mask').check();r=run(p)[0]
++  check('observation-actually-updates-evidence',r['observations']==1 and r['packets'][0]['projection']['observation']['resources']=='unknown' and r['packets'][1]['projection']['observation']['resources']=='observed')
++  check('observation-not-fake-physical-step',r['actions']==2 and r['final']['turn']-r['initial']['turn']==2)
++  check('masked-run-does-not-get-full-info-optimal-label',r['oracle'] is None)
++  p.locator('#lab-mask').uncheck();p.locator('#lab-task').select_option('fast');r=run(p)[0];check('changed-goal-changes-behavior',r['status']=='succeeded' and r['actions']==1 and r['final']['energy']==9)
++  p.locator('#lab-task').select_option('chain');p.locator('#lab-perturb').check();r=run(p)[0];check('scripted-world-change-executed',r['status']=='succeeded' and r['perturbations']==1)
++  p.locator('#lab-perturb').uncheck();p.locator('#lab-task').select_option('energy');p.locator('#lab-strategy').select_option('serial');p.locator('#lab-delay').select_option('20');p.locator('#lab-deadline').select_option('150');r=run(p)[0]
++  check('synthetic-latency-deadline-honestly-fails',r['status']!='succeeded' and r['syntheticDelayMs']==20 and r['externalRequests']==0)
++  check('synthetic-latency-labeled-not-model','非模型' in p.locator('#lab-verdict').inner_text())
++  p.locator('#lab-deadline').select_option('10000');p.locator('#lab-delay').select_option('50');p.locator('#lab-run').click();p.locator('#lab-cancel').click();p.wait_for_function('!document.querySelector("#lab-run").disabled');check('cancel-clears-busy-state','取消' in p.locator('#lab-status').inner_text())
++  p.locator('#lab-delay').select_option('0');p.locator('#btn-connect').click();p.locator('#decision-style').select_option('dependent');p.locator('#apply-mode').click();p.locator('#local-tab-game').click();p.evaluate('window.tuanziLab.loadScenario("meadow")');p.locator('#btn-step').click();p.wait_for_function('window.tuanziLab.exportTrace().decisionAudit.judgmentRuns.length>0')
++  check('main-game-dependent-mode-is-real',p.evaluate('window.tuanziLab.exportTrace().decisionAudit.judgmentRuns[0].dependencyWaves')==2)
++  p.locator('#btn-connect').click();p.locator('#decision-style').select_option('classic');p.locator('#apply-mode').click();p.locator('#local-tab-game').click();p.evaluate('window.tuanziLab.loadScenario("meadow")');p.locator('#btn-step').click();p.wait_for_function('window.tuanziLab.snapshot().turn===1');check('legacy031-interface-remains-selectable',p.evaluate('window.tuanziLab.exportTrace().decisionAudit.judgmentRuns.length')==0)
++  p.set_viewport_size({'width':390,'height':844});check('mobile-no-horizontal-overflow',p.evaluate('document.documentElement.scrollWidth<=innerWidth+1'))
++  p.locator('#local-tab-judgment').click();p.locator('#lab-task').select_option('energy');p.locator('#lab-strategy').select_option('batch');r=run(p)[0];check('mobile-experiment-runs',r['status']=='succeeded');p.locator('#decision-lab').screenshot(path=str(R/'reports/v043/mobile-local-judgment.png'))
++  p.locator('#lab-evidence summary') if False else None
++  p.locator('#decision-lab .lab-evidence details summary').click();check('mobile-json-contained',p.locator('#lab-json').bounding_box()['width']<390)
++  check('no-uncaught-browser-errors',not errors);check('no-offline-external-request',not any(x.startswith(('https:','http:')) for x in requests));b.close()
++except Exception as e:checks.append({'name':'exception','pass':False,'error':str(e)});print(str(e),flush=True)
++finally:
++ (R/'reports/v043/browser-v04-adapted.json').write_text(json.dumps({'mode':'actual standalone bytes via set_content','realModels':'NOT_RUN','checks':checks,'errors':errors,'requests':requests},ensure_ascii=False,indent=2));sys.exit(0 if all(x['pass'] for x in checks) else 1)
+diff --git a/scripts/browser-v043.py b/scripts/browser-v043.py
+--- /dev/null
++++ b/scripts/browser-v043.py
+@@ -0,0 +1,130 @@
++"""v0.4.3 UI regression. Hosted HTML bytes + REAL local API through an explicit
++transport fixture because sandbox blocks navigation. SSE wire separately tested by
++unchanged Node tests. No true model calls. Includes screenshots and runtime equality.
++"""
++import os,json,time,pathlib,subprocess,urllib.request,urllib.error
++from playwright.sync_api import sync_playwright
++R=pathlib.Path(__file__).resolve().parent.parent;REPORT=R/'reports/v043';REPORT.mkdir(parents=True,exist_ok=True)
++BASE=os.environ.get('GS_LAB_URL','http://127.0.0.1:4184');FAULT=os.environ.get('GS_LAB_FAULT_URL','http://127.0.0.1:4185')
++checks=[];errors=[];http_calls=[]
++def check(name,ok):
++ checks.append({'name':name,'pass':bool(ok)});print(name,bool(ok),flush=True)
++ (REPORT/'browser-progress.json').write_text(json.dumps(checks,ensure_ascii=False,indent=2))
++ if not ok:raise AssertionError(name)
++def http(req,base=BASE):
++ url=req['url'];url=base+url if url.startswith('/') else url;data=req.get('body');http_calls.append({'url':req['url'],'method':req.get('method','GET')})
++ request=urllib.request.Request(url,data=data.encode() if data is not None else None,method=req.get('method','GET'),headers=req.get('headers',{}))
++ try:
++  with urllib.request.urlopen(request,timeout=40) as r:return {'status':r.status,'text':r.read().decode(),'headers':{'content-type':'application/json'}}
++ except urllib.error.HTTPError as e:return {'status':e.code,'text':e.read().decode(),'headers':{'content-type':'application/json'}}
++def cli(*args,base=BASE,actor='agent:ui-043'):
++ p=subprocess.run(['node','bin/gs-lab.mjs',*args,'--url',base,'--actor',actor],cwd=R,text=True,capture_output=True,timeout=90)
++ return json.loads(p.stderr if p.returncode else p.stdout)
++BRIDGE=r"""
++(()=>{
++const originalFetch=window.fetch.bind(window);
++history.pushState=history.replaceState=(_a,_b,url)=>{window.__fixtureURL=url;};
++window.fetch=async(input,init={})=>{
++ const url=String(input);if(!url.startsWith('/api/'))return originalFetch(input,init);
++ if(window.__disconnect)throw new TypeError('Simulated observer network loss');
++ if(init.signal?.aborted)throw new DOMException('Aborted','AbortError');
++ if(url.includes('/stream?')){
++  let stopped=false,timer,ctl;const parsed=new URL(url,'http://fixture'),base=parsed.pathname.replace('/stream','/events');let after=Number(parsed.searchParams.get('after')||0);
++  const stream=new ReadableStream({start(controller){ctl=controller;const pump=async()=>{if(stopped)return;try{if(window.__disconnect)throw Error('Simulated stream loss');const r=await __labHttp({url:base+'?after='+after+'&limit=250',method:'GET',headers:init.headers||{}});if(stopped)return;if(r.status!==200)throw Error(r.text);const data=JSON.parse(r.text);for(const e of data.events){after=e.seq;controller.enqueue(new TextEncoder().encode('id: '+e.seq+'\nevent: lab\ndata: '+JSON.stringify(e)+'\n\n'));}timer=setTimeout(pump,25);}catch(e){if(!stopped){stopped=true;controller.error(e);}}};pump();},cancel(){stopped=true;clearTimeout(timer);}});
++  init.signal?.addEventListener('abort',()=>{if(!stopped){stopped=true;clearTimeout(timer);ctl.error(new DOMException('Aborted','AbortError'));}},{once:true});return new Response(stream,{status:200,headers:{'content-type':'text/event-stream'}});
++ }
++ const r=await __labHttp({url,method:init.method||'GET',headers:init.headers||{},body:init.body??null});if(init.signal?.aborted)throw new DOMException('Aborted','AbortError');return new Response(r.text,{status:r.status,headers:r.headers});
++};
++})();
++"""
++def mount(b,width=1440,base=BASE):
++ p=b.new_page(viewport={'width':width,'height':1060 if width>600 else 844});p.set_default_timeout(15000);p.on('pageerror',lambda e:errors.append(str(e)));p.expose_function('__labHttp',lambda req:http(req,base))
++ html=(R/'public/lab.html').read_text().replace('<link rel="stylesheet" href="/lab.css">','<style>'+(R/'public/lab.css').read_text()+'</style>').replace('<script src="/lab.js"></script>','<script>'+BRIDGE+'</script><script>'+(R/'public/lab.js').read_text().replace('</script','<\\/script')+'</script>')
++ p.set_content(html);p.wait_for_function('window.gsLabViewer && document.querySelectorAll(".run-row").length>0');return p
++def select(p,rid):
++ if not p.locator('#list-page').is_visible():p.locator('#back-list').click()
++ p.locator('#run-search').fill('');p.locator('#status-filter').select_option('all');p.locator('#refresh').click();p.locator('[data-run="'+rid+'"]').click();p.wait_for_function('(id)=>window.gsLabViewer.snapshot()?.runId===id && !window.gsLabViewer.view().listing',arg=rid)
++ p.wait_for_function('window.gsLabViewer.view().connected')
++def nooverflow(p):return p.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1')
++try:
++ with sync_playwright() as pw:
++  b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox'])
++  game=cli('create','--kind','game','--scenario','guarded','--strategy','batch','--deadline-ms','3600000','--label','外部实验 Agent');rid=game['runId']
++  energy=cli('create','--task','energy','--strategy','direct','--deadline-ms','120000');eid=energy['runId']
++  p=mount(b);before_count=len(cli('list')['runs'])
++  check('043-default-is-list-not-creation-wall',p.locator('#list-page').is_visible() and not p.locator('#create-dialog').is_visible() and not p.locator('#run-page').is_visible())
++  check('043-current-version-visible','0.4.3' in p.locator('header').inner_text())
++  check('043-list-title-status-owner-legible',p.locator('.run-row').count()>=2 and '程序化参考' in p.locator('#run-list').inner_text())
++  p.locator('#run-search').fill(rid);check('043-search-matches-id',p.locator('.run-row').count()==1);p.locator('#run-search').fill('')
++  p.screenshot(path=str(REPORT/'desktop-list-v043.png'),full_page=True)
++  p.locator('#new-run').click();check('043-create-in-modal-independent-context',p.locator('#create-dialog').is_visible() and p.locator('input[name="scope"][value="game"]').is_checked())
++  p.locator('#strategy').select_option('serial');p.keyboard.press('Escape');check('043-cancel-draft-does-not-create',len(cli('list')['runs'])==before_count)
++  check('043-dialog-focus-restored',p.evaluate('document.activeElement.id')=='new-run')
++  select(p,rid);check('043-default-run-tab-overview',p.locator('#tab-overview').get_attribute('aria-selected')=='true' and not p.locator('#panel-config').is_visible())
++  check('043-no-new-form-or-edit-tools-in-overview',not p.locator('#create-form').is_visible() and not p.locator('#checkpoint-list').is_visible() and not p.locator('#tool').is_visible())
++  check('043-nonowner-only-takeover',p.locator('#takeover').is_visible() and not p.locator('#start').is_visible() and not p.locator('#step').is_visible())
++  initial=cli('status',rid)
++  for tab in ['decision','diagnostics','config','overview']:p.locator('#tab-'+tab).click()
++  check('043-tabs-never-mutate-or-request-model',cli('status',rid)['world']==initial['world'] and cli('status',rid)['requests']==0)
++  p.locator('#tab-overview').focus();p.keyboard.press('ArrowRight');check('043-tabs-roving-keyboard-navigation',p.locator('#tab-decision').get_attribute('aria-selected')=='true' and p.evaluate('document.activeElement.id')=='tab-decision');p.keyboard.press('Home')
++  for _ in range(5):cli('step',rid)
++  p.wait_for_function('window.gsLabViewer.snapshot()?.physicalActions>=4')
++  check('043-cli-and-viewer-world-identical',p.evaluate('window.gsLabViewer.snapshot().world')==cli('status',rid)['world'])
++  check('043-active-skill-and-immediate-task-readable','创造采集' in p.locator('#current-skill').inner_text() and '[object Object]' not in p.locator('#immediate-task').inner_text())
++  check('043-key-events-human-readable',p.locator('.timeline-item').count()>0 and 'parent_event' not in p.locator('#activity').inner_text())
++  check('043-overview-no-raw-json',not p.locator('#evidence-json').is_visible())
++  p.locator('#title').focus();p.screenshot(path=str(REPORT/'desktop-overview-v043.png'),full_page=True)
++  p.locator('#tab-decision').click();check('043-structured-decision-candidates',p.locator('.candidate-row').count()>0)
++  p.locator('#decision-content [data-evidence]').first.click();check('043-raw-evidence-on-demand',p.locator('#evidence-dialog').is_visible() and len(p.locator('#evidence-json').inner_text())>50);p.keyboard.press('Escape')
++  p.locator('#tab-config').click();check('043-config-is-readonly-and-game-goal-not-energy',p.locator('#panel-config input').count()==0 and 'task 字段不改变' in p.locator('#config-content').inner_text())
++  p.locator('#config-copy').click();p.locator('#strategy').select_option('dependent');p.keyboard.press('Escape');check('043-draft-not-current-configuration',cli('status',rid)['config']['strategy']=='batch');p.locator('#tab-overview').click()
++  p.locator('#takeover').click();check('043-takeover-requires-clear-confirmation',p.locator('#confirm-dialog').is_visible() and cli('status',rid)['owner']['kind']=='agent');p.locator('#confirm-action').click();p.wait_for_function('window.gsLabViewer.snapshot()?.owner.kind==="human"')
++  check('043-human-takeover-enables-controls',p.locator('#step').is_visible() and p.locator('#step').is_enabled() and not p.locator('#takeover').is_visible())
++  rejected=cli('step',rid);check('043-old-agent-refused',rejected.get('error',{}).get('code')=='NOT_CONTROLLER')
++  n=p.evaluate('window.gsLabViewer.snapshot().decisionSteps');p.locator('#step').click();p.wait_for_function('(n)=>window.gsLabViewer.snapshot().decisionSteps>n && !window.gsLabViewer.snapshot().busy',arg=n)
++  check('043-human-step-same-runtime',p.evaluate('window.gsLabViewer.snapshot().world')==cli('status',rid)['world'])
++  p.locator('#more-open').click();p.locator('#fork-open').click();p.locator('#fork-dialog').wait_for(state='visible');check('043-fork-dialog-separate-from-create',p.locator('#fork-dialog').is_visible() and not p.locator('#create-dialog').is_visible())
++  p.locator('#checkpoint').click();p.wait_for_function('document.querySelector("#checkpoint-list").options.length>1');check('043-checkpoint-recorded',p.locator('#checkpoint-list option').count()>1)
++  p.locator('#fork-strategy').select_option('direct');p.locator('#fork').click();p.wait_for_function('(id)=>window.gsLabViewer.snapshot()?.runId!==id',arg=rid);fid=p.evaluate('window.gsLabViewer.snapshot().runId');fork=cli('status',fid)
++  check('043-fork-has-explicit-strategy-and-lineage',fork['config']['strategy']=='direct' and fork['lineage']['memory']=='none' and fork['physicalActions']==0)
++  check('043-fork-does-not-use-stale-create-draft',fork['config']['strategy']!='dependent' and cli('status',rid)['config']['strategy']=='batch')
++  p.locator('#more-open').click();p.locator('#intervene-open').click();p.locator('#point-x').fill('0');p.locator('#point-y').fill('0');p.locator('#edit').click();p.wait_for_function('window.gsLabViewer.snapshot().interventions.length>0');check('043-intervention-retains-record',cli('status',fid)['interventions'][0]['tool']=='wall')
++  p.locator('#more-open').click();p.locator('#cancel').click();p.locator('#confirm-action').click();p.wait_for_function('window.gsLabViewer.snapshot().status==="cancelled"');check('043-terminal-no-resume',not p.locator('#start').is_visible() and not p.locator('#step').is_visible())
++  select(p,eid);cli('step',eid);p.wait_for_function('window.gsLabViewer.snapshot().physicalActions===1');p.locator('#tab-decision').click();check('043-judgment-report-displays-actual-choice','已选择候选' in p.locator('#decision-content').inner_text());p.locator('#tab-overview').click()
++  cli('start',eid,'--wait');p.wait_for_function('window.gsLabViewer.snapshot().status==="succeeded" && document.querySelector("#status-title").textContent.includes("根任务已完成")');check('043-terminal-success-from-authority','根任务已完成' in p.locator('#status-title').inner_text())
++  p.locator('#replay').click();p.wait_for_function('window.gsLabViewer.readOnlyReplay()');check('043-replay-start-metrics-and-world-aligned',p.evaluate('window.gsLabViewer.displayedSnapshot().world.energy')==10 and p.locator('#external').inner_text()=='0' and p.locator('#progress').inner_text()=='4 / 5')
++  p.locator('#tab-decision').click();check('043-replay-hides-future-judgment','尚未发生判断' in p.locator('#decision-content').inner_text());p.locator('#tab-overview').click()
++  mx=p.locator('#replay-slider').get_attribute('max');p.locator('#replay-slider').fill(mx);p.locator('#replay-slider').dispatch_event('input');check('043-replay-end-metrics-aligned',p.evaluate('window.gsLabViewer.displayedSnapshot().world.energy')==40 and p.locator('#progress').inner_text()=='5 / 5')
++  check('043-replay-no-state-mutation',cli('status',eid)['physicalActions']==2);p.locator('#live').click()
++  p.locator('#more-open').click()
++  with p.expect_download() as dl:p.locator('#export').click()
++  exported=REPORT/'browser-report.json';dl.value.save_as(str(exported));check('043-export-keeps-original-schema',json.loads(exported.read_text())['schema']=='gs/lab-export/v1')
++  p.locator('#back-list').click();p.locator('#import').set_input_files(str(exported));p.wait_for_function('window.gsLabViewer.view().imported');check('043-import-is-readonly-without-live-actions',p.locator('#replay-bar').is_visible() and not p.locator('#start').is_visible() and not p.locator('#live').is_visible())
++  check('043-import-uses-historical-metrics',p.evaluate('window.gsLabViewer.displayedSnapshot().world.energy')==10)
++  select(p,rid);p.evaluate('window.__disconnect=true');p.wait_for_function('!window.gsLabViewer.view().connected');check('043-stream-loss-explains-stale-snapshot',p.locator('#stale-banner').is_visible() and p.locator('#step').is_disabled());p.evaluate('window.__disconnect=false');p.wait_for_function('window.gsLabViewer.view().connected',timeout=10000);check('043-reconnect-resumes-events-not-engine',p.evaluate('window.gsLabViewer.snapshot().world')==cli('status',rid)['world'])
++  # Responsive order: world before the detailed metrics, no desktop sidebars below.
++  mobile=mount(b,390);select(mobile,rid);check('043-mobile-no-horizontal-overflow',nooverflow(mobile));check('043-mobile-world-within-first-screen',mobile.locator('.world-panel').bounding_box()['y']<600)
++  check('043-mobile-no-long-forms-in-page',not mobile.locator('#create-form').is_visible() and not mobile.locator('#tool').is_visible());mobile.screenshot(path=str(REPORT/'mobile-overview-v043.png'),full_page=True)
++  mobile.locator('#new-run').click();check('043-mobile-create-modal-fits',mobile.locator('#create-dialog').bounding_box()['width']<=390);mobile.screenshot(path=str(REPORT/'mobile-create-v043.png'),full_page=True);mobile.keyboard.press('Escape');mobile.close()
++  # UI creation is lazy and real-model configuration is unavailable on normal service.
++  p.locator('#new-run').click();check('043-missing-models-disabled',p.locator('#preset option[value="jev"]').evaluate('(e)=>e.disabled'))
++  p.locator('input[name="scope"][value="judgment"]').check();p.locator('#task').select_option('reserve');p.locator('#strategy').select_option('batch');p.screenshot(path=str(REPORT/'desktop-create-v043.png'),full_page=True);p.locator('#create').click();p.wait_for_function('window.gsLabViewer.snapshot().config.task==="reserve" && window.gsLabViewer.snapshot().status==="ready"');check('043-create-lazy-and-goal-correct',p.locator('#goal').inner_text().find('2')>=0 and p.evaluate('window.gsLabViewer.snapshot().requests')==0)
++  # Different fixture server: explicit, non-real model abstention.
++  blocked=cli('create','--kind','game','--scenario','guarded','--strategy','direct','--backend','jev','--generator','llm','--allow-live','--max-requests','80','--deadline-ms','600000',base=FAULT)
++  bid=blocked['runId'];cli('start',bid,'--wait',base=FAULT);bp=mount(b,1440,FAULT);select(bp,bid)
++  check('043-blocked-human-readable-and-raw-cause', '子层未选出' in bp.locator('#status-title').inner_text() and 'decision_blocked:no_local_suitable_action' in bp.locator('#status-reason').inner_text())
++  check('043-blocked-zero-action-and-no-resume',bp.evaluate('window.gsLabViewer.snapshot().physicalActions')==0 and not bp.locator('#start').is_visible())
++  check('043-fixture-not-labelled-real-Jev','测试替身' in bp.locator('#source-caption').inner_text() and '测试替身' in bp.locator('#external-label').inner_text())
++  count=cli('status',bid,base=FAULT)['requests'];bp.locator('#status-detail').click();check('043-diagnostics-show-exact-budget-and-recovery','1 / 3' in bp.locator('#diagnostics-content').inner_text());bp.locator('#diagnostics-content [data-evidence]').first.click();check('043-complete-recovery-json-accessible','gs/skill-task-context/v042' in bp.locator('#evidence-json').inner_text());bp.keyboard.press('Escape');bp.locator('#tab-overview').click();bp.screenshot(path=str(REPORT/'desktop-blocked-v043.png'),full_page=True)
++  check('043-diagnostic-browsing-never-retries-model',cli('status',bid,base=FAULT)['requests']==count)
++  bp.locator('#more-open').click();bp.locator('#fork-open').click();bp.locator('#fork-dialog').wait_for(state='visible');check('043-live-fork-requires-new-consent',bp.locator('#fork-live').is_visible() and not bp.locator('#fork-allow-live').is_checked());bp.locator('#fork').click();check('043-no-silent-live-authorization',bp.locator('#fork-error').is_visible());bp.keyboard.press('Escape');bp.close()
++  # Local standalone modes remain isolated, navigation has no execution side effects.
++  lp=b.new_page(viewport={'width':1440,'height':1000});lp.on('pageerror',lambda e:errors.append(str(e)));lp.set_content((R/'play.html').read_text());lp.wait_for_function('window.gsDecisionLab && window.tuanziLab');check('043-local-game-only-in-default-view',lp.locator('#local-game').is_visible() and not lp.locator('#decision-lab').is_visible())
++  snap=lp.evaluate('window.tuanziLab.snapshot()');lp.locator('#local-tab-judgment').click();check('043-local-judgment-separate-context',lp.locator('#decision-lab').is_visible() and not lp.locator('#local-game').is_visible());lp.locator('#decision-lab h2').evaluate('(e)=>{e.tabIndex=-1;e.focus()}');lp.keyboard.press('ArrowRight');check('043-hidden-game-hotkeys-dont-step',lp.evaluate('window.tuanziLab.snapshot()')==snap)
++  lp.locator('#lab-compare').click();lp.wait_for_function('!document.querySelector("#lab-run").disabled',timeout=60000);rs=lp.evaluate('window.gsDecisionLab.results()');check('043-four-local-comparisons-unchanged',len(rs)==4 and all(r['status']=='succeeded' for r in rs) and [r['requests'] for r in rs]==[2,2,50,4]);check('043-local-experiment-does-not-change-main-world',lp.evaluate('window.tuanziLab.snapshot()')==snap)
++  lp.locator('#local-tab-game').click();lp.locator('#btn-connect').click();check('043-local-options-grouped-without-version-prefixes',lp.locator('#run-mode optgroup').count()==3 and not lp.locator('#run-mode option').first.inner_text().startswith('v0.'));lp.keyboard.press('Escape');lp.screenshot(path=str(REPORT/'desktop-local-v043.png'),full_page=True);lp.close()
++  check('043-desktop-no-overflow',nooverflow(p));check('043-no-uncaught-browser-errors',not errors)
++  p.close();b.close()
++ (REPORT/'browser-v043.json').write_text(json.dumps({'checks':checks,'errors':errors,'navigation':'set_content + real local HTTP transport fixture; native navigation blocked by sandbox','externalModels':'NOT_RUN','apiReadsAndWrites':len(http_calls)},ensure_ascii=False,indent=2))
++except Exception as e:
++ (REPORT/'browser-v043.json').write_text(json.dumps({'checks':checks,'errors':errors,'failure':str(e)},ensure_ascii=False,indent=2));raise
+diff --git a/scripts/build.mjs b/scripts/build.mjs
+--- a/scripts/build.mjs
++++ b/scripts/build.mjs
+@@ -36,6 +36,6 @@
+ modules.clear();
+ const labEntry=visit(path.join(dist,'src/lab/viewer.js'));
+ const labRegistry=[...modules].map(([id,{output,deps}])=>`${JSON.stringify(id)}:{deps:${JSON.stringify(deps)},factory:function(module,exports,require){\n${output}\n}}`).join(',\n');
+-const labBundle=`/* G/S v0.4.2 shared-run observer. */\n(()=>{'use strict';const modules={${labRegistry}};const cache=Object.create(null);function load(id){if(cache[id])return cache[id].exports;const d=modules[id],m={exports:{}};cache[id]=m;d.factory(m,m.exports,n=>load(d.deps[n]));return m.exports;}load(${JSON.stringify(labEntry)});})();\n`;
++const labBundle=`/* G/S v0.4.3 shared-run observer. */\n(()=>{'use strict';const modules={${labRegistry}};const cache=Object.create(null);function load(id){if(cache[id])return cache[id].exports;const d=modules[id],m={exports:{}};cache[id]=m;d.factory(m,m.exports,n=>load(d.deps[n]));return m.exports;}load(${JSON.stringify(labEntry)});})();\n`;
+ fs.writeFileSync(path.join(root,'public/lab.js'),labBundle);
+ console.log(`Built observer: ${modules.size} modules; browser owns no GSEngine.`);
+diff --git a/scripts/check-ui-v043.py b/scripts/check-ui-v043.py
+--- /dev/null
++++ b/scripts/check-ui-v043.py
+@@ -0,0 +1,35 @@
++"""Run current UI suites against isolated local services. Optional Python Playwright needed.
++Uses actual HTML with explicit transport fixture where native localhost navigation is blocked.
++No external model credentials are used; mock server is explicitly an offline test double.
++"""
++import os, pathlib, socket, subprocess, sys, time, urllib.request
++R=pathlib.Path(__file__).resolve().parent.parent
++REPORT=R/'reports/v043';REPORT.mkdir(parents=True,exist_ok=True)
++def port():
++ with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
++normal,mock=port(),port()
++env=os.environ.copy()
++# Do not let optional provider configuration turn browser tests into paid calls.
++env.update({'GS_LAB_URL':f'http://127.0.0.1:{normal}','GS_LAB_FAULT_URL':f'http://127.0.0.1:{mock}'})
++procs=[];handles=[]
++try:
++ for number,script,log in [(normal,'server.mjs','ui-http.txt'),(mock,'scripts/lib/serve-incident-fixture-v042.mjs','ui-mock.txt')]:
++  h=open(REPORT/log,'w');handles.append(h)
++  p=subprocess.Popen(['node',script],cwd=R,env={**env,'PORT':str(number)},stdout=h,stderr=subprocess.STDOUT);procs.append(p)
++  for attempt in range(60):
++   if p.poll() is not None:raise RuntimeError(f'Service exited: {script}; see {log}')
++   try:
++    with urllib.request.urlopen(f'http://127.0.0.1:{number}/api/status',timeout=1) as r:break
++   except Exception:time.sleep(.15)
++  else:raise TimeoutError('Local service did not start')
++ for script,log in [('browser-v043.py','browser-current.txt'),('browser-v03.py','browser-hierarchy.txt'),('browser-legacy-on-v03.py','browser-legacy.txt'),('browser-v04-on-v043.py','browser-judgment.txt')]:
++  print('Running',script,flush=True)
++  with open(REPORT/log,'w') as h:
++   subprocess.run([sys.executable,'-u','scripts/'+script],cwd=R,env=env,stdout=h,stderr=subprocess.STDOUT,check=True,timeout=480)
++ print('Current viewer and local legacy behavior suites passed.',flush=True)
++finally:
++ for p in procs:p.terminate()
++ for p in procs:
++  try:p.wait(timeout=8)
++  except subprocess.TimeoutExpired:p.kill();p.wait()
++ for h in handles:h.close()
+diff --git a/src/lab/presentation.ts b/src/lab/presentation.ts
+--- /dev/null
++++ b/src/lab/presentation.ts
+@@ -0,0 +1,110 @@
++/** Pure, read-only presentation functions. Never choose actions or modify a LabView. */
++import type {LabView, LabEvent, LabConfig, Command} from './types.js';
++export const STATUS: Record<string, string> = {
++ ready:'准备就绪', running:'运行中', stepping:'单步推进中', pausing:'正在等待决策边界', paused:'已暂停',
++ cancelling:'正在取消', succeeded:'任务完成', failed:'任务失败', blocked:'决策受阻', cancelled:'已取消', stopped:'已停止', fault:'运行故障'
++};
++export const SCENARIOS:Record<string,string>={guarded:'守卫果园',meadow:'日常采集',detour:'近路被堵',remix:'镜像布局'};
++export const TASKS:Record<string,{title:string;description:string}>={
++ fast:{title:'尽快交付',description:'尽快完成第 5 颗浆果交付，并保持存活。'},
++ reserve:{title:'交付并保留两颗',description:'完成第 5 颗交付时，背包至少保留 2 颗浆果。'},
++ energy:{title:'为下一程补能',description:'完成第 5 颗交付时，能量至少为 35。'},
++ chain:{title:'采集—返家—交付',description:'完成两颗额外交付，背包保留至少 1 颗，能量至少为 20。'}
++};
++export const STRATEGIES:Record<string,string>={direct:'直接选择',batch:'独立判断 · 合批',serial:'独立判断 · 逐题',dependent:'适用性 → 再选择'};
++export const CONTRACTS:Record<string,string>={'access-open':'创造安全采集机会','acquired-one':'采集一颗浆果',deposited:'返回并交付','energy-restored':'补充能量'};
++export const PHASES:Record<string,string>={'place-resource':'接近站位并放置资源','wait-access':'等待采集机会','gather':'获取目标浆果','consume':'食用浆果','acquire':'获取目标浆果','collect':'获取目标浆果','deliver':'返回并交付','restore':'补充能量','go-home':'返回小窝','eat':'食用浆果'};
++export const terminal=(status:string)=>['succeeded','failed','blocked','cancelled','stopped','fault'].includes(status);
++export const rec=(v:unknown):Record<string,any>=>v!==null&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,any>:{};
++export const list=(v:unknown):any[]=>Array.isArray(v)?v:[];
++export const esc=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
++export const titleOf=(c:LabConfig)=>c.kind==='game'?(SCENARIOS[c.scenario]??c.scenario):(TASKS[c.task]?.title??c.task);
++export const goalOf=(s:LabView)=>s.config.kind==='game'?`保持存活，把 ${s.world.target} 颗浆果带回小窝。`:(TASKS[s.config.task]?.description??'以注册任务契约验收。');
++export function duration(ms:number){if(!Number.isFinite(ms))return '—';return ms<1000?`${Math.round(ms)} ms`:ms<60000?`${(ms/1000).toFixed(1)} 秒`:`${Math.floor(ms/60000)} 分 ${Math.floor(ms%60000/1000)} 秒`;}
++export function actualSource(s:LabView){
++ const d=rec(s.lastDecision),src=String(d.source??'');
++ if(src==='test-provider'||String(d.selectorIdentity??'').includes('test'))return '测试替身 · 不代表真实模型';
++ if(s.externalRequests>0)return `${s.externalRequests} 次真实外部请求 · 含判断 / 生成`;
++ if(s.config.backend!=='rule'||s.config.generator==='llm')return '已配置模型 · 尚无真实外部请求';
++ return '程序化运行 · 无真实外部请求';
++}
++export function sourceLabel(source:unknown){return ({'authored-rule':'程序规则',rule:'程序规则',mock:'测试替身','test-provider':'测试替身','deterministic-single':'单候选确定性路径','deterministic-continue':'继续调度当前技能',jev:'Jev 判断','configured-model':'配置的模型','configured-provider':'配置的模型'} as Record<string,string>)[String(source)]??String(source??'来源未报告');}
++export function reasonText(reason:string|null){
++ if(!reason)return '';
++ const known: [string,string][]=[
++ ['decision_blocked:no_local_suitable_action','子层未选出适用动作'],['decision_blocked:parent_no_suitable_skill','父层未选出适用技能'],
++ ['duplicate_repair_no_new_evidence','已停止重复修复：没有新的行为结构或证据'],['repair_budget_exhausted','技能修复预算已耗尽'],
++ ['wall_clock_deadline','实验已达到整局时间上限'],['host_step_or_action_budget','实验已达到步骤或动作预算'],['no_local_suitable_action','局部选择器未选出动作'],
++ ['operator_pause_at_boundary','操作员暂停了后续调度'],['controller_changed','控制权已转移，实验停在决策边界'],['operator_cancel','操作员已取消实验'],
++ ['execution_outcome_unknown','动作结果尚未确认，需要核对执行证据'],['event_budget_exhausted','事件记录已达到本局上限']
++ ];
++ return known.find(([prefix])=>reason.includes(prefix))?.[1]??'运行已到达需要检查的边界';
++}
++export function statusCopy(s:LabView):{title:string;body:string;tone:string}{
++ const blocked=terminal(s.status)&&s.status!=='succeeded';
++ if(s.status==='succeeded')return {title:'根任务已完成',body:`验收器确认本局成功。实际执行 ${s.physicalActions} 个物理动作，剩余能量 ${s.world.energy}。${s.interventions.length?'本局有环境干预，比较时需保留该条件。':'局部技能结果可在判断过程中逐项查证。'}`,tone:'success'};
++ if(blocked)return {title:reasonText(s.reason)||STATUS[s.status]!,body:s.status==='blocked'?`本局已停止自动尝试，不能作为普通暂停继续。已执行 ${s.physicalActions} 个物理动作；查看最后一次判断，或从检查点创建新实验。`:s.status==='cancelled'?'已经发生的动作不会回滚。可以查看轨迹或创建新的对照实验。':'世界和结果保持在实际停止位置。请查看诊断中的原始原因和预算，再决定是否新建实验。',tone:s.status==='cancelled'?'neutral':'warning'};
++ if(s.status==='paused')return {title:'实验已暂停',body:'尚未结束。拥有控制权的操作员可以继续或单步；人工暂停仍计入整局墙钟期限。',tone:'neutral'};
++ if(s.status==='ready')return {title:'准备就绪，尚未开始',body:'配置已经固定。开始或单步之后才启动实验计时；观看页面不会触发模型请求。',tone:'neutral'};
++ if(s.status==='pausing'||s.status==='cancelling')return {title:STATUS[s.status]!,body:'已在途的决策量子可能完成；程序不会擅自回滚动作或开始下一轮。',tone:'neutral'};
++ return {title:STATUS[s.status]??s.status,body:'下面显示服务端的真实进度。关闭网页不会停止实验。',tone:'active'};
++}
++export function actionsFor(s:LabView,actorId:string,opts:{replay?:boolean;imported?:boolean;connected?:boolean;pending?:boolean}={}){
++ const own=s.owner.id===actorId, done=terminal(s.status),quiet=!s.busy&&!['running','stepping','pausing','cancelling'].includes(s.status);
++ const writable=!opts.replay&&!opts.imported&&opts.connected!==false&&!opts.pending;
++ const enabled:Record<string,boolean>={start:writable&&own&&!done&&quiet,step:writable&&own&&!done&&quiet,pause:writable&&own&&!done&&!quiet,cancel:writable&&own&&!done,takeover:writable&&!own&&!done,checkpoint:writable&&own&&quiet,intervene:writable&&own&&!done&&quiet,schedule:writable&&own&&!done&&quiet};
++ const visible=opts.imported||opts.replay?[]:done?[]:!own?['takeover']:quiet?['start','step']:['pause'];
++ return {own,done,quiet,enabled,visible:visible as Command['action'][]};
++}
++export type Flow={skill:string;phase:string;immediate:string;detail:string};
++export function flowOf(s:LabView):Flow{
++ const active=rec(s.activeSkill),spec=rec(active.spec),latest=rec(s.lastDecision),packet=rec(latest.packet??latest),projection=rec(packet.projection);
++ const task=rec(projection.taskContext??projection.context??packet.taskContext);
++ if(Object.keys(spec).length){
++  const phase=list(spec.phases)[Number(active.phase)||0];
++  return {skill:String(spec.title??CONTRACTS[String(spec.success)]??'局部技能'),phase:phase?`${Number(active.phase)+1} / ${list(spec.phases).length} · ${PHASES[phase.rule]??phase.rule}`:'等待下一阶段',immediate:String(task.immediateTask??task.immediateGoal??rec(task.immediateObjective).description??'按当前阶段生成并检查可执行候选。'),detail:'局部目标完成后返回父层，不代表整局已经完成。'};
++ }
++ const failure=rec(rec(s.diagnostics).latestFailure),context=rec(failure.taskContext),last=rec(s.lastSkillResult);
++ if(s.status==='blocked')return {skill:CONTRACTS[String(rec(failure.spec).success)]??String(last.skillId?'最近的局部技能':'当前技能判断'),phase:reasonText(s.reason),immediate:'查看该次候选、问题上下文与选择器返回结果。',detail:'系统没有改选第二名，也没有隐式切换到规则控制器。'};
++ if(s.config.kind==='judgment')return {skill:'固定任务判断',phase:STRATEGIES[s.config.strategy]??s.config.strategy,immediate:terminal(s.status)?'本次实验已结束，可查看判断与结果。':'按同一份事实比较当前动作候选。',detail:'问题组织改变，根任务和动作权限不变。'};
++ if(active.program||active.mode)return {skill:'程序 / 规则控制器',phase:active.subgoal??'执行既有策略',immediate:'具体策略与完整证据在判断过程内展开。',detail:'这是参考控制器，不冒充模型执行。'};
++ return {skill:terminal(s.status)?'本次根任务已结束':'父层 · 选择局部技能',phase:'等待技能选择',immediate:s.status==='ready'?'开始后形成当前可调用的技能候选。':'上一个子任务已返回；父层根据新状态继续选择。',detail:s.status==='ready'?'尚未产生判断证据。':'局部结果在下方关键过程中保留。'};
++}
++export type KeyEvent={seq:number;at:string;title:string;detail:string;tone:string;raw:LabEvent};
++export function unwrap(e:LabEvent):{type:string;data:Record<string,any>}{let t=e.type,d=rec(e.data);if(t==='engine'){const ev=rec(d.event);t=String(ev.type??'engine');d=rec(ev.data);}
++ for(let i=0;i<4&&['parent_event','child_event'].includes(t);i++){const ev=rec(d.event);if(!ev.type)break;t=String(ev.type);d=rec(ev.data);}return {type:t,data:d};}
++export function keyEvents(events:LabEvent[],through=Infinity):KeyEvent[]{
++ const out:KeyEvent[]=[];const seen=new Set<string>();
++ for(const e of events){if(e.seq>through)continue;const {type:t,data:d}=unwrap(e);let title='',detail='',tone='normal';
++  if(t==='run_created'){title='实验已创建';detail='配置固定，尚未执行。';}
++  else if(t==='control_transferred'){title='控制权转移';detail=`${rec(d.from).label??rec(d.from).id??'原控制者'} → ${rec(d.to).label??rec(d.to).id??'新控制者'}`;}
++  else if(t==='command'){const a=String(d.action);if(!['start','pause','cancel','step'].includes(a))continue;title=({start:'开始连续运行',pause:'请求在决策边界暂停',cancel:'请求取消',step:'推进一次决策量子'} as Record<string,string>)[a]!;detail=String(rec(d.actor).label??rec(d.actor).id??'操作员');}
++  else if(t==='skill_generation_started'){title='生成器开始提出技能';detail=d.source==='llm'?'来源：配置的 LLM':'来源：本地有限语法搜索';}
++  else if(t==='skill_generated'){title='新技能进入试行';detail=`${rec(d.spec).title??'局部技能'}；模拟通过不等于实际成功。`;}
++  else if(t==='skill_started'){title='父层调用局部技能';detail=String(rec(d.spec).title??rec(d.spec).id??'技能');}
++  else if(t==='skill_summary'){title=d.localSucceeded?'局部目标已完成':'局部技能已返回';detail=`${d.rootSucceeded?'根任务也已完成':'根任务仍由独立验收器判断'} · ${rec(d.outcome).steps??0} 个物理动作${d.reason?' · '+d.reason:''}`;tone=d.localSucceeded?'success':'warning';}
++  else if(t==='decision_audit'){title=d.status==='abstained'?'选择器返回「不执行」':d.status==='error'?'判断请求出现错误':'一次判断已返回';detail=`${sourceLabel(d.source)} · ${d.choice??d.error??'未选择候选'}`;tone=d.status==='selected'?'normal':'warning';}
++  else if(t==='transition'&&rec(d.candidate).action?.kind!=='callSkill'&&rec(rec(d.candidate).action).kind){title='执行一个物理动作';detail=String(rec(d.candidate).description??rec(rec(d.candidate).action).kind);}
++  else if(t==='intervention'){title=rec(d.result).ok?'环境干预已应用':'环境干预未生效';detail=`${d.tool??''} · ${rec(d.result).message??''}`;tone='warning';}
++  else if(t==='intervention_scheduled'){title='已登记受控干预';detail='实际执行结果另行记录。';}
++  else if(t==='checkpoint_created'){title='已保存检查点';detail=String(d.label??d.id??'');}
++  else if(t==='proposal_rejected'){title='提案未通过验证';detail=String(rec(d.feedback).reason??rec(d.rejection).reason??d.reason??'展开原始记录查看具体原因');tone='warning';}
++  else if(t==='run_ended'){title=STATUS[String(d.status)]??'本次实验结束';detail=reasonText(d.reason??null)||'根验收结果已记录。';tone=d.status==='succeeded'?'success':'warning';}
++  if(!title)continue;const key=`${t}:${JSON.stringify(d)}`;if(seen.has(key))continue;seen.add(key);out.push({seq:e.seq,at:e.at,title,detail,tone,raw:e});
++ }return out;
++}
++export function decisionsFrom(events:LabEvent[],s:LabView){const found:Record<string,any>[]=[];const seen=new Set<string>();
++ for(const e of events){if(e.seq>s.lastSeq)continue;const {type,data}=unwrap(e);if(type==='decision_audit'){const key=String(rec(data.packet).id??JSON.stringify(data));if(!seen.has(key)){seen.add(key);found.push({...data,eventSeq:e.seq});}}}
++ const d=rec(s.lastDecision);if(Object.keys(d).length){const p=rec(d.packet??d),key=String(p.id??JSON.stringify(d));if(!seen.has(key)){
++   if(d.packet)found.push(d);
++   else {
++    const schedule=rec(s.lastSkillResult);let answer:Record<string,any>|undefined;
++    if(schedule.snapshotKey===p.id){for(const e of events){if(e.seq>s.lastSeq)break;const u=unwrap(e);if(u.type==='selector_answered'&&rec(u.data.answer).output)answer=rec(rec(u.data.answer).output);}}
++    const backend=String(rec(list(schedule.batches)[0]).backend??'');
++    found.push({packet:d,status:answer?(answer.choice?'selected':'abstained'):'unreported',choice:answer?.choice,judgment:answer,latencyMs:schedule.elapsedMs,questions:schedule.questions,externalRequests:schedule.externalRequests,source:backend.includes('rule')?'authored-rule':backend.includes('MOCK')?'test-provider':schedule.externalRequests>0?'configured-model':'记录来源见原始请求',selectorIdentity:backend,schedule});
++   }
++  }}return found;
++}
++export function replayStates(report:unknown):LabView[]{const r=rec(report);const frames:LabView[]=[];for(const e of list(r.events)){if(e.type==='state'&&isView(e.data))frames.push(structuredClone(e.data));}
++ if(!frames.length&&isView(r.state))frames.push(structuredClone(r.state));return frames.sort((a,b)=>a.lastSeq-b.lastSeq);}
++export function isView(raw:unknown):raw is LabView{const r=rec(raw),w=rec(r.world),c=rec(r.config),o=rec(r.owner);return r.schema==='gs/lab-state/v1'&&typeof r.runId==='string'&&Number.isSafeInteger(r.lastSeq)&&r.lastSeq>=0&&typeof r.status==='string'&&['game','judgment'].includes(c.kind)&&typeof o.id==='string'&&w.width===17&&w.height===11&&Array.isArray(w.terrain)&&w.terrain.length===187&&['player','home'].every(k=>Number.isInteger(rec(w[k]).x)&&Number.isInteger(rec(w[k]).y))&&['walls','berries','guards','lures'].every(k=>Array.isArray(w[k])&&w[k].length<=187)&&Number.isFinite(w.energy)&&Number.isFinite(w.turn);}
+diff --git a/src/lab/viewer-layout.ts b/src/lab/viewer-layout.ts
+--- /dev/null
++++ b/src/lab/viewer-layout.ts
+@@ -0,0 +1,52 @@
++/** All mutation controls are contextual; creation fields are never current-run fields. */
++export const layout=`
++<a class="skip-link" href="#main-content">跳到实验内容</a>
++<header class="site-header"><a href="/lab" id="brand-home" class="brand" aria-label="团子实验室，返回实验列表"><span class="brand-mark">g/s</span><span><b>团子实验室</b><small>G/S 决策与实验观测</small></span></a>
++<nav class="top-nav" aria-label="主要导航"><button id="home" class="nav-link active">实验</button><button id="help-open" class="nav-link">使用说明</button><a href="/" class="nav-link secondary-link">本地试玩 ↗</a></nav>
++<div class="header-end"><span class="connection-pill"><i id="connection-dot"></i><span id="connection">连接服务中</span></span><span class="version">v0.4.3</span><button id="new-run" class="primary">＋ 新建实验</button></div></header>
++<main id="main-content" tabindex="-1" class="container">
++<section id="list-page" aria-labelledby="list-title">
++ <div class="page-intro"><div><p class="overline">实验工作区</p><h1 id="list-title">每一场实验，都有据可查。</h1><p class="lead">Agent 主持实验，你在这里观察目标、决策和结果。</p></div><div class="intro-note"><span class="note-dot"></span><p>网页只观察同一个服务端会话。<br>打开页面不会创建副本或调用模型。</p></div></div>
++ <div class="list-tools"><div class="search-field"><span aria-hidden="true">⌕</span><input id="run-search" type="search" placeholder="搜索名称、任务或运行 ID" aria-label="搜索实验"></div><select id="status-filter" aria-label="筛选实验状态"><option value="all">全部状态</option><option value="active">进行中 / 可继续</option><option value="succeeded">已完成</option><option value="attention">需要检查</option><option value="ended">已结束</option></select><span id="list-count" class="muted"></span><div class="spacer"></div><button id="import-open" class="quiet">导入报告</button><button id="refresh" class="quiet">刷新列表</button></div>
++ <div class="list-table-heading" aria-hidden="true"><span>实验 / 研究内容</span><span>状态</span><span>配置的判断方式</span><span>控制者 / 时间</span><span></span></div>
++ <div id="run-list" class="run-list" aria-live="polite"><div class="empty-state"><span class="empty-symbol">◎</span><h2>正在读取实验列表</h2><p>请先启动本地服务 npm start。</p></div></div>
++ <div class="list-bottom"><p>也可以从终端创建，随后打开返回的 viewerUrl。</p><button id="cli-help" class="text-button">查看 Agent 操作入口 →</button></div>
++</section>
++<section id="run-page" class="hidden" aria-labelledby="title">
++ <div class="breadcrumbs"><button id="back-list" class="text-button">实验列表</button><span>/</span><span id="crumb-title">当前实验</span><span class="spacer"></span><button id="copy-id" class="text-button mono">复制运行 ID</button></div>
++ <div class="run-heading"><div><div class="title-line"><h1 id="title">当前实验</h1><span id="run-status" class="badge">准备就绪</span></div><p id="goal" class="goal"></p></div><div class="run-heading-meta"><div id="owner" class="owner"></div><p id="source-caption"></p></div></div>
++ <div id="run-tags" class="run-tags"></div>
++ <div id="stale-banner" class="callout warning hidden" role="status"></div>
++ <div class="run-navigation"><div class="tabs" role="tablist" aria-label="实验信息"><button id="tab-overview" data-tab="overview" role="tab" aria-selected="true" aria-controls="panel-overview" tabindex="0">概览</button><button id="tab-decision" data-tab="decision" role="tab" aria-selected="false" aria-controls="panel-decision" tabindex="-1">判断过程</button><button id="tab-diagnostics" data-tab="diagnostics" role="tab" aria-selected="false" aria-controls="panel-diagnostics" tabindex="-1">诊断 <span id="diagnostic-dot" class="small-dot hidden"></span></button><button id="tab-config" data-tab="config" role="tab" aria-selected="false" aria-controls="panel-config" tabindex="-1">配置</button></div>
++ <div id="toolbar" class="toolbar"><button id="takeover" class="quiet hidden">接管并暂停</button><button id="step" class="quiet hidden">单步</button><button id="start" class="primary hidden">开始运行</button><button id="pause" class="primary hidden">暂停运行</button><button id="replay" class="quiet">回放</button><button id="more-open" class="quiet" aria-label="更多实验操作">更多 ···</button></div></div>
++ <div id="replay-bar" class="replay-bar hidden"><div><b>只读回放</b><small id="replay-caption">地图、过程与指标均来自所选时刻</small></div><button id="replay-prev" class="icon-button" aria-label="上一条状态">‹</button><input id="replay-slider" type="range" min="0" max="0" value="0" aria-label="选择回放时刻"><button id="replay-next" class="icon-button" aria-label="下一条状态">›</button><span id="replay-position" class="mono"></span><button id="live" class="quiet">返回实时</button></div>
++ <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
++  <div class="metrics"><div><small>任务进展</small><strong id="progress">—</strong><span id="progress-note">以根任务验收为准</span></div><div><small>能量 / 背包</small><strong id="energy">—</strong><span id="bag-note">—</span></div><div><small id="external-label">实际外部请求</small><strong id="external">—</strong><span id="request-note">—</span></div><div><small>整局墙钟</small><strong id="elapsed">—</strong><span id="elapsed-note">—</span></div></div>
++  <div id="stop-detail" class="status-summary hidden" role="status"><div><h2 id="status-title"></h2><p id="status-body"></p><code id="status-reason"></code></div><button id="status-detail" class="quiet">查看这次判断 →</button></div>
++  <div class="overview-grid"><section class="world-panel"><div class="section-heading"><h2>实验世界</h2><span id="world-mode" class="subtle-tag">服务端快照</span></div><div class="world-scene"><canvas id="world" aria-label="当前实验世界快照" role="img"></canvas></div><div class="scene-footer"><span id="world-label"></span><span id="sequence-label" class="mono"></span></div></section>
++  <section class="process-panel"><div class="section-heading"><h2>G/S 正在做什么</h2><span class="subtle-tag" id="process-level">父 / 子</span></div><div class="goal-ladder"><div class="ladder-row"><span class="ladder-node root">根</span><div><small>根目标</small><p id="root-goal"></p></div></div><div class="ladder-row"><span class="ladder-node">S</span><div><small>当前技能</small><h3 id="current-skill"></h3><p id="current-phase" class="muted"></p></div></div><div class="ladder-row last"><span class="ladder-node">→</span><div><small>眼前任务</small><p id="immediate-task"></p></div></div></div><div class="process-status"><i id="process-pulse"></i><div><strong id="process-status-title">等待执行</strong><p id="process-status-note"></p></div></div><button id="inspect-current" class="text-button">查看候选与选择依据 →</button><p class="process-boundary">状态说明来自运行事件，不是模型内心独白。</p></section></div>
++  <section class="timeline-section"><div class="section-heading"><div><h2>最近的关键过程</h2><p>从原始事件聚合；展开后可核对证据。</p></div><button id="all-process" class="text-button">查看完整过程 →</button></div><div id="activity" class="key-timeline"></div></section>
++ </div>
++ <section id="panel-decision" role="tabpanel" aria-labelledby="tab-decision" class="hidden"><div class="section-intro"><h2>从问题到行动</h2><p>候选、模型返回和执行许可是不同环节。所有数值按原始记录展示，不解释为任务胜率。</p></div><label for="decision-select">选择一次判断</label><select id="decision-select"></select><div id="decision-content"></div><details class="evidence-details"><summary>完整事件时间线与原始证据</summary><div id="full-timeline" class="full-timeline"></div></details></section>
++ <section id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" class="hidden"><div class="section-intro"><h2>诊断与执行边界</h2><p>先定位原因，再检查证据；诊断操作不会自动重试模型或恢复终止运行。</p></div><div id="diagnostics-content"></div></section>
++ <section id="panel-config" role="tabpanel" aria-labelledby="tab-config" class="hidden"><div class="section-intro row"><div><h2>当前实验的实际配置</h2><p>只读。要修改条件，请创建新的实验，原运行不会改变。</p></div><button id="config-copy" class="quiet">以此配置新建</button></div><div id="config-content"></div></section>
++</section>
++</main>
++<footer class="site-footer"><span>G/S Lab · 外部 Agent 主持实验，被测引擎决定行动。</span><span>仅限可信本地使用 · <button id="limits-open" class="text-button">查看运行边界</button></span></footer>
++<input type="file" id="import" class="hidden" accept=".json,application/json" aria-label="导入只读实验报告">
++<dialog id="create-dialog" aria-labelledby="create-title"><div class="dialog-head"><div><p class="overline">新的实验 · 不影响当前运行</p><h2 id="create-title">你要评估什么？</h2></div><button class="icon-button" data-close="create-dialog" aria-label="关闭新建实验">×</button></div>
++<form id="create-form"><div class="dialog-body"><div class="scope-choices"><label class="scope-card"><input type="radio" name="scope" value="game" checked><b>完整任务</b><span>观察技能调用、世界变化与任务结果</span></label><label class="scope-card"><input type="radio" name="scope" value="judgment"><b>判断组合</b><span>同一份事实，比较不同判断组织</span></label></div>
++<div class="form-grid"><div id="game-fields"><label for="scenario">地图</label><select id="scenario"><option value="guarded">守卫果园</option><option value="meadow">日常采集</option><option value="detour">近路被堵</option><option value="remix">镜像布局</option></select></div><div id="task-field" class="hidden"><label for="task">固定任务</label><select id="task"><option value="energy">为下一程补能</option><option value="fast">尽快交付</option><option value="reserve">交付并保留两颗</option><option value="chain">采集—返家—交付</option></select></div><div><label for="preset">判断与生成配置</label><select id="preset"><option value="offline">程序化基准 · 无外部请求</option><option value="jev">Jev 判断 · 本地生成</option><option value="live">Jev + LLM 技能提案</option><option value="custom">自定义组合</option></select></div><div><label for="strategy">判断组织</label><select id="strategy"><option value="direct">直接选择 · 一个 Choice</option><option value="batch">独立判断 · 合批请求</option><option value="serial">独立判断 · 逐题请求</option><option value="dependent">先适用性，再选择</option></select></div></div><p id="strategy-help" class="field-help"></p>
++<details id="advanced-config" class="evidence-details"><summary>高级配置 · 控制器、来源和预算</summary><div class="form-grid"><div id="controller-field"><label for="controller">决策控制器</label><select id="controller"><option value="hierarchy">父子 G/S 技能</option><option value="program">完整序列搜索 · 离线参考</option><option value="rules">完整预置规则 · 离线参考</option></select></div><div><label for="backend">判断来源</label><select id="backend"><option value="rule">程序化参考</option><option value="jev">Jev · 真实请求</option><option value="llm">LLM · 真实请求</option></select></div><div id="generator-field"><label for="generator">技能生成来源</label><select id="generator"><option value="local">本地搜索</option><option value="llm">LLM 技能提案</option></select></div><div><label for="experience">经验使用</label><select id="experience"><option value="use">记录并参与选择</option><option value="record">只记录</option><option value="off">关闭</option></select></div><div><label for="seed">候选顺序种子</label><input id="seed" type="number" min="0" max="2147483647" value="441" required></div><div><label for="delay">合成延迟 / 请求（ms）</label><input id="delay" type="number" min="0" max="1000" value="0" required></div><div><label for="requests">请求上限</label><input id="requests" type="number" min="1" max="512" value="512" required></div><div><label for="deadline">整局截止（ms）</label><input id="deadline" type="number" min="1" max="3600000" value="120000" required></div><div><label for="max-questions">独立问题上限</label><input id="max-questions" type="number" min="1" max="8192" value="8192" required></div><div><label for="max-actions">物理动作上限</label><input id="max-actions" type="number" min="1" max="180" value="180" required></div><div><label for="max-steps">决策周期上限</label><input id="max-steps" type="number" min="1" max="1000" value="400" required></div><div><label for="max-search">搜索工作上限</label><input id="max-search" type="number" min="1" max="500000" value="150000" required></div></div><label id="mask-field" class="checkbox"><input id="mask" type="checkbox">初始资源未观测 · 仅判断实验</label><label for="interventions">受控干预脚本（JSON 数组，可留空）</label><textarea id="interventions" rows="3" spellcheck="false" placeholder='[{"afterAction":3,"tool":"wall","point":{"x":3,"y":8}}]'></textarea><p class="field-help">正式对照使用相同脚本。操作员暂停占用整局墙钟；合成延迟仅适用于规则后端。判断夹具当前截止上限为 120,000 ms，完整任务为 3,600,000 ms。</p></details>
++<div id="live-permission" class="callout warning hidden"><strong>此配置会在运行后产生真实模型请求</strong><p id="live-readiness"></p><label class="checkbox"><input id="allow-live" type="checkbox">我明确允许这场实验在上述请求预算内使用已配置模型</label></div>
++<div id="create-summary" class="creation-summary"></div><p id="create-error" class="inline-error hidden" role="alert"></p></div><div class="dialog-footer"><span>只创建，不自动开始或付费。</span><button type="button" class="quiet" data-close="create-dialog">取消</button><button type="submit" id="create" class="primary">创建实验</button></div></form></dialog>
++<dialog id="more-dialog" class="compact-dialog" aria-labelledby="more-title"><div class="dialog-head"><h2 id="more-title">实验操作</h2><button class="icon-button" data-close="more-dialog" aria-label="关闭实验操作">×</button></div><div class="dialog-body action-list"><button id="export" class="action-choice"><b>导出完整报告</b><span>配置、事件、诊断与实际轨迹</span></button><button id="clone-config" class="action-choice"><b>以此配置新建</b><span>全新起点；不会复制当前内存或调用栈</span></button><button id="fork-open" class="action-choice"><b>检查点与新分支</b><span>明确选择起点、经验继承和新预算</span></button><button id="intervene-open" class="action-choice"><b>受控环境干预</b><span>仅控制者在静止边界操作，始终留痕</span></button><button id="cancel" class="action-choice danger"><b>取消本次实验</b><span>不可继续；已发生的动作不会回滚</span></button><p id="operation-note" class="field-help"></p></div></dialog>
++<dialog id="fork-dialog" aria-labelledby="fork-title"><div class="dialog-head"><h2 id="fork-title">从检查点创建新实验</h2><button class="icon-button" data-close="fork-dialog" aria-label="关闭检查点对话框">×</button></div><div class="dialog-body"><p>这不是恢复调用栈。新实验使用独立控制器与计数器；原实验保持不变。</p><button id="checkpoint" class="quiet">保存当前检查点</button><label for="checkpoint-list">新实验起点</label><select id="checkpoint-list"><option value="initial">初始局面</option></select><div id="checkpoint-summary" class="creation-summary"></div><label class="checkbox"><input id="inherit" type="checkbox">继承已有技能与经验（结果不属于独立样本）</label><label for="fork-strategy">新实验的判断组织</label><select id="fork-strategy"><option value="direct">直接选择</option><option value="batch">独立判断 · 合批</option><option value="serial">独立判断 · 逐题</option><option value="dependent">先适用性，再选择</option></select><div id="fork-live" class="callout warning hidden"><label for="fork-requests">新分支请求上限</label><input id="fork-requests" type="number" min="1" max="512" value="80"><label class="checkbox"><input id="fork-allow-live" type="checkbox">明确授权这个新分支使用真实模型</label></div><p class="field-help">其余配置来自当前实验，不读取新建对话框的草稿。剩余世界物理回合不会重置。</p><p id="fork-error" class="inline-error hidden" role="alert"></p></div><div class="dialog-footer"><button class="quiet" data-close="fork-dialog">取消</button><button id="fork" class="primary">创建新分支</button></div></dialog>
++<dialog id="intervene-dialog" class="compact-dialog" aria-labelledby="intervene-title"><div class="dialog-head"><h2 id="intervene-title">受控环境干预</h2><button class="icon-button" data-close="intervene-dialog" aria-label="关闭干预">×</button></div><div class="dialog-body"><p>只在静止边界修改世界。不能指定团子的下一步动作，也不能修改验收标准。</p><label for="tool">操作</label><select id="tool"><option value="wall">增加障碍</option><option value="berry">移动 / 添加浆果</option><option value="guard">移动守卫</option><option value="erase">擦除对象</option></select><div class="form-grid"><div><label for="point-x">X（0–16）</label><input id="point-x" type="number" min="0" max="16" value="3"></div><div><label for="point-y">Y（0–10）</label><input id="point-y" type="number" min="0" max="10" value="8"></div></div><label for="edit-when">执行时机</label><select id="edit-when"><option value="now">现在应用</option><option value="scheduled">未来物理动作边界</option></select><div id="after-field" class="hidden"><label for="after-action">本局完成多少个物理动作后</label><input id="after-action" type="number" min="1" max="180" value="3"></div><p id="edit-error" class="inline-error hidden" role="alert"></p></div><div class="dialog-footer"><button class="quiet" data-close="intervene-dialog">取消</button><button id="edit" class="primary">记录并应用</button></div></dialog>
++<dialog id="evidence-dialog" class="wide-dialog" aria-labelledby="evidence-title"><div class="dialog-head"><div><p class="overline">只读 · 原始记录</p><h2 id="evidence-title">查看证据</h2></div><button class="icon-button" data-close="evidence-dialog" aria-label="关闭证据">×</button></div><div class="dialog-body"><pre id="evidence-json" class="code"></pre></div></dialog>
++<dialog id="confirm-dialog" class="compact-dialog" aria-labelledby="confirm-title"><div class="dialog-head"><h2 id="confirm-title"></h2><button class="icon-button" data-close="confirm-dialog" aria-label="关闭确认">×</button></div><div class="dialog-body"><p id="confirm-body"></p></div><div class="dialog-footer"><button class="quiet" data-close="confirm-dialog">返回</button><button id="confirm-action" class="primary">确认</button></div></dialog>
++<dialog id="help-dialog" aria-labelledby="help-title"><div class="dialog-head"><h2 id="help-title">一场实验，三个阅读层次</h2><button class="icon-button" data-close="help-dialog" aria-label="关闭使用说明">×</button></div><div class="dialog-body help-content"><h3>01 · 概览</h3><p>先看目标和状态，再看世界与 G/S 当前任务。界面中的控制者是主持实验的人或 Agent，不是替团子选择动作的模型。</p><h3>02 · 判断过程</h3><p>逐次展开问题、候选、返回结果与执行记录。不把局部目标成功当作整个实验成功。</p><h3>03 · 诊断与配置</h3><p>原始错误、预算、修复证据和完整 JSON 都保留。配置只读；修改条件会创建新实验。</p><h3>外部 Agent 操作入口</h3><pre class="code">node bin/gs-lab.mjs create --kind game --scenario guarded
++node bin/gs-lab.mjs step RUN_ID
++node bin/gs-lab.mjs start RUN_ID
++node bin/gs-lab.mjs export RUN_ID --out report.json</pre><p>打开 create 返回的 viewerUrl，即观察同一个 runId。关闭网页不结束实验；重启服务会丢失内存中的活动运行。</p><h3>可信本地环境</h3><p>服务不用于公网多租户部署。真实请求需要服务端凭据与单局授权。测试替身、规则运行和真实模型记录分别标识；本次 UI 升级未进行实网模型评测。</p></div></dialog>
++<div id="toast" class="hidden" role="status"></div>`;
+diff --git a/src/lab/viewer.ts b/src/lab/viewer.ts
+--- a/src/lab/viewer.ts
++++ b/src/lab/viewer.ts
+@@ -1,79 +1,178 @@
+-/** Viewer is a client only: no GSEngine instance and no simulation controls in this bundle. */
++/** v0.4.3 observation client. No GSEngine, strategy mutation, simulation or model calls. */
+ import {WorldRenderer} from '../ui/renderer.js';
+-import {createWorld} from '../game/world.js';
+-import type {GameState} from '../game/types.js';
+ import type {LabView,LabEvent,Actor,Command,LabConfig} from './types.js';
+-function uid(){if(typeof crypto.randomUUID==='function')return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]!&15)|64;b[8]=(b[8]!&63)|128;const h=[...b].map(x=>x.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
+-const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
+-const esc=(x:unknown)=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+-const labels:Record<string,string>={ready:'就绪',running:'运行中',stepping:'单步推进',pausing:'等待决策边界',paused:'已暂停',cancelling:'取消中',succeeded:'任务完成',failed:'任务失败',blocked:'决策受阻',cancelled:'已取消',stopped:'已停止',fault:'运行故障'};
+-const terminal=(s:string)=>['succeeded','failed','blocked','cancelled','stopped','fault'].includes(s);
+-let actorId:string;try{actorId=sessionStorage.getItem('gs-lab-viewer-id')??`human:${uid()}`;sessionStorage.setItem('gs-lab-viewer-id',actorId);}catch{actorId=`human:${Date.now()}`;}
++import {layout} from './viewer-layout.js';
++import {STATUS,SCENARIOS,TASKS,STRATEGIES,CONTRACTS,PHASES,terminal,rec,list,esc,titleOf,goalOf,duration,actualSource,sourceLabel,reasonText,statusCopy,actionsFor,flowOf,keyEvents,decisionsFrom,replayStates,isView,unwrap} from './presentation.js';
++const $=<T extends HTMLElement=HTMLElement>(id:string):T=>{const el=document.getElementById(id);if(!el)throw Error(`Missing viewer element: ${id}`);return el as T;};
++const val=(id:string)=>$<HTMLInputElement>(id).value;
++const checked=(id:string)=>$<HTMLInputElement>(id).checked;
++const hide=(id:string,hidden:boolean)=>$(id).classList.toggle('hidden',hidden);
++const text=(id:string,v:unknown)=>{$(id).textContent=String(v??'');};
++const html=(id:string,v:string)=>{if($(id).innerHTML!==v)$(id).innerHTML=v;};
++function uid(){if(typeof crypto.randomUUID==='function')return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
++let actorId:string;try{actorId=sessionStorage.getItem('gs-lab-viewer-id')??`human:${uid()}`;sessionStorage.setItem('gs-lab-viewer-id',actorId);}catch{actorId=`human:${uid()}`;}
+ const actor:Actor={id:actorId,kind:'human',label:'网页操作员'};
+-let token='',state:LabView|null=null,cap:any,events:LabEvent[]=[],cursor=0,streamAbort:AbortController|null=null,connectGeneration=0,replaying=false,frames:GameState[]=[],imported=false,selectedTab='events';
+-document.getElementById('lab-app')!.innerHTML=`
+-<header><div class="brand"><div class="mark">g/s</div><div><div class="brand-name">TUANZI LAB</div><div class="subbrand">AGENT CONTROL · HUMAN OBSERVATION / 0.4.2</div></div></div><div class="header-right"><a class="legacy-link" href="/">本地试玩 ↗</a><span class="pill"><i id="connection-dot" class="dot off"></i><span id="connection">连接服务</span></span></div></header>
+-<div class="layout">
+-<aside class="sidebar"><section class="panel"><div class="row"><h2>实验会话</h2><button id="refresh" class="small">刷新</button></div><p class="hint">CLI 和网页共享同一个 runId。</p><div id="run-list" class="runs"><p class="empty-note">读取实验列表…</p></div></section>
+-<section class="panel"><div class="eyebrow">CREATE A RUN</div><h2>新建实验</h2><form id="create-form"><label for="kind">实验范围</label><select id="kind"><option value="judgment">判断组合实验</option><option value="game">主游戏 · G/S 技能</option></select><div id="task-field"><label for="task">固定任务</label><select id="task"><option value="energy">为下一程补能</option><option value="fast">尽快交付</option><option value="reserve">交付并保留两颗</option><option value="chain">采集—返家—交付</option></select></div><div id="game-fields" class="hidden"><label for="scenario">地图</label><select id="scenario"><option value="guarded">守卫果园</option><option value="meadow">日常采集</option><option value="detour">近路被堵</option><option value="remix">镜像布局</option></select><label for="controller">参考实现</label><select id="controller"><option value="hierarchy">父子 G/S</option><option value="program">完整序列搜索</option><option value="rules">完整预置规则</option></select></div><label for="strategy">判断组织</label><select id="strategy"><option value="batch">独立拆分 · 合批</option><option value="direct">直接 Choice</option><option value="serial">独立拆分 · 逐题</option><option value="dependent">适用性 → 再选择</option></select><label for="backend">判断来源</label><select id="backend"><option value="rule">程序化参考</option><option value="jev">Jev · 真实请求</option><option value="llm">LLM · 真实请求</option></select><details><summary>预算与实验条件</summary><div class="config-grid"><div><label for="seed">顺序种子</label><input id="seed" type="number" min="0" value="441"></div><div><label for="delay">模拟延迟 ms</label><input id="delay" type="number" min="0" max="1000" value="0"></div><div><label for="requests">请求上限</label><input id="requests" type="number" min="1" max="512" value="512"></div><div><label for="deadline">整局截止 ms</label><input id="deadline" type="number" min="1" value="120000"></div></div><label class="checkbox"><input id="mask" type="checkbox">起初隐藏资源字段</label><label class="checkbox"><input id="allow-live" type="checkbox">明确允许本次真实模型请求</label><p class="hint">从首次单步开始计时；人工暂停也占用墙钟期限。观看速度不改变实验速度。</p></details><button class="primary full" type="submit" id="create">创建会话</button></form><label class="import">离线查看导出报告<input type="file" id="import" accept=".json,application/json"></label></section></aside>
+-<main class="main-stage"><div class="stage-head"><div class="eyebrow">ONE RUN. ONE AUTHORITATIVE WORLD.</div><div class="row"><h1 id="title">实验由 Agent 操作。过程在人眼前。</h1><span class="pill" id="run-status">未选择实验</span></div><p id="run-id">从左侧选择会话，或在终端创建一场实验。</p><div class="notice hidden" id="stop-detail" role="status"></div><div class="tags" id="run-tags"><span class="pill">HTTP / CLI 控制</span><span class="pill">SSE 事件同步</span><span class="pill">不复制游戏实例</span></div></div>
+-<div class="toolbar"><button id="takeover">接管并暂停</button><button id="step">单步</button><button id="start" class="primary">开始运行</button><button id="pause">暂停</button><button id="cancel" class="danger">取消</button><button id="replay">回放</button><button id="export">导出 JSON</button></div>
+-<div id="replay-bar" class="replay-bar hidden"><span>只读回放</span><input id="replay-slider" type="range" min="0" max="0" value="0" aria-label="回放进度"><span id="replay-position">0 / 0</span><button id="live" class="small">返回实时</button></div>
+-<div class="scene"><canvas id="world" aria-label="服务端实验世界，实时快照"></canvas><div class="scene-overlay" id="empty-world"><h2>让 Agent 主持实验</h2><p>在终端创建会话，网页即可同步看到实际状态、判断与结果。关闭页面不会停止服务端实验。</p><pre class="code">node bin/gs-lab.mjs create --task energy</pre></div><div class="scene-footer"><span id="world-label">等待权威快照</span><span id="sequence-label">事件序号 —</span></div></div>
+-<div class="stats"><div class="stat"><div class="value" id="actions">—</div><div class="label">实际物理动作</div></div><div class="stat"><div class="value" id="request-count">—</div><div class="label">判断 / 生成请求</div></div><div class="stat"><div class="value" id="questions">—</div><div class="label">独立判断问题</div></div><div class="stat"><div class="value" id="external">—</div><div class="label">真实外部请求尝试</div></div></div>
+-<section class="panel"><div class="tabs"><button data-tab="events">事件时间线</button><button data-tab="decision">判断证据</button><button data-tab="skill">父子技能</button><button data-tab="config">实验配置</button><button data-tab="recovery">修复诊断</button></div><div id="activity" class="activity"></div><pre id="detail-json" class="code hidden"></pre></section></main>
+-<aside class="details"><section class="panel"><div class="eyebrow">CONTROL & PROVENANCE</div><h2>当前控制者</h2><div id="owner" class="owner-box">未选择会话<span><br>网页默认只观察，接管会留痕。</span></div><div id="runtime" style="margin-top:12px"></div><div id="result-note" class="notice hidden"></div></section>
+-<section class="panel"><div class="eyebrow">REPRODUCIBLE EXPERIMENTS</div><h2>检查点与分支</h2><p class="hint">分支是新试验：控制器阶段和预算重新开始，原实验保持不变。</p><button id="checkpoint" class="full">保存当前检查点</button><label for="checkpoint-list">分支起点</label><select id="checkpoint-list"><option value="initial">初始局面</option></select><label class="checkbox"><input id="inherit" type="checkbox">继承已有技能 / 经验（非独立样本）</label><button id="fork" class="full">从此处创建新实验</button></section>
+-<section class="panel wide"><div class="eyebrow">RECORDED INTERVENTIONS</div><h2>受控环境干预</h2><p class="hint">只能在暂停边界编辑世界，不能强制团子的下一步动作，也不能改验收条件。</p><select id="tool"><option value="wall">增加障碍</option><option value="berry">移动 / 添加浆果</option><option value="guard">移动守卫</option><option value="erase">擦除对象</option></select><div class="config-grid"><div><label for="point-x">X / 0–16</label><input id="point-x" type="number" min="0" max="16" value="3"></div><div><label for="point-y">Y / 0–10</label><input id="point-y" type="number" min="0" max="10" value="8"></div></div><button id="edit" class="full">记录并应用干预</button><p class="hint">正式基准可通过配置 interventions 或 CLI schedule 预设脚本。</p></section></aside></div>
+-<footer class="footer">G/S LAB 0.4.2 · 外部 Agent 是实验员，被测引擎才是决策者。<br>本地可信单用户服务。状态由服务端持有；所有模型请求须显式授权。离线结果不代表模型性能。</footer><div id="toast" class="hidden" role="status"></div>`;
+-const renderer=new WorldRenderer($<HTMLCanvasElement>('world'));renderer.setState(createWorld('guarded'),true);
+-const val=(id:string)=>$<HTMLInputElement>(id).value;
+-const check=(id:string)=>$<HTMLInputElement>(id).checked;
+-let toastTimer:ReturnType<typeof setTimeout>;function toast(s:string){$('toast').textContent=s;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),6500);}
+-async function api(path:string,body?:unknown){const res=await fetch(path,{method:body?'POST':'GET',headers:{'x-gs-token':token,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const out=await res.json();if(!res.ok)throw Error(`${out.error?.code??res.status}: ${out.error?.message??out.error}`);return out;}
+-function path(id=state?.runId){return `/api/lab/runs/${id}`;}
+-function render(){if(!state)return;$('empty-world').classList.add('hidden');const c=state.config;const testing=(state.lastDecision as any)?.source==='test-provider';$('title').textContent=c.kind==='game'?({'guarded':'守卫果园','meadow':'日常采集','detour':'近路被堵','remix':'镜像布局'}[c.scenario]):(cap?.tasks?.[c.task]?.title??c.task);$('run-status').textContent=(imported?'归档 · ':'')+(labels[state.status]??state.status);$('run-id').textContent=state.runId;
+- $('run-tags').innerHTML=[c.kind==='game'?`主游戏 / ${c.controller}`:'判断组合',c.strategy,testing?'测试替身 · 非真实模型':c.backend==='rule'?'程序化参考':`${c.backend} / 真实请求`,testing?'离线协议验证':c.backend==='rule'&&c.generator==='local'?'模型 NOT_RUN':'已授权模型',replaying?'只读回放':'实时快照'].map(x=>`<span class="pill">${esc(x)}</span>`).join('');
+- if(!replaying)renderer.setState(state.world);$('world-label').textContent=`物理回合 ${state.world.turn} · 能量 ${state.world.energy} · 交付 ${state.world.delivered}/5 · 背包 ${state.world.bag}`;$('sequence-label').textContent=`seq ${state.lastSeq} / rev ${state.worldRevision}`;
+- $('actions').textContent=String(state.physicalActions);$('request-count').textContent=String(state.requests);$('questions').textContent=String(state.questions);$('external').textContent=String(state.externalRequests);
+- const own=state.owner.id===actor.id,done=terminal(state.status),quiet=!state.busy&&!['running','pausing','cancelling','stepping'].includes(state.status),writable=own&&!done&&!imported&&!replaying;
+- $('owner').innerHTML=`${esc(state.owner.label||state.owner.id)}<br><span>${esc(state.owner.id)} · ${state.owner.kind==='human'?'人工':'Agent'}${own?' · 你拥有控制权':' · 当前只读'}</span>`;
+- for(const id of ['start','step','edit','checkpoint'])$<HTMLButtonElement>(id).disabled=!writable||!quiet;
+- $<HTMLButtonElement>('pause').disabled=!writable||quiet;$<HTMLButtonElement>('cancel').disabled=!writable;$<HTMLButtonElement>('takeover').disabled=own||done||imported||replaying;
+- $<HTMLButtonElement>('fork').disabled=imported;$<HTMLButtonElement>('replay').disabled=false;$<HTMLButtonElement>('export').disabled=false;
+- const diag=state.diagnostics as any;const repairs=diag?.budgets?.repairs;const latest=diag?.latestFailure;
+- $('stop-detail').classList.toggle('hidden',!state.reason);$('stop-detail').textContent=state.reason?`原因：${state.reason}${latest?' · 最近阻塞：'+latest.reason+' · 子技能实际步数：'+latest.outcome.steps:''}。不会自动改选规则答案或重复生成；可导出诊断或从检查点创建新试验。`:'';
+- const metrics=[['控制版本',state.controlVersion],['父层决策量子',state.decisionSteps],['整局墙钟',`${Math.round(state.elapsedMs)} ms`],['引擎推进耗时',`${Math.round(state.engineWorkMs)} ms`],['修复次数 / 上限',repairs?`${repairs.used} / ${repairs.limit}`:'不适用'],['物理动作 / 上限',`${state.physicalActions} / ${c.maxActions}`],['请求 / 上限',`${state.requests} / ${c.maxRequests}`],['问题组织',c.strategy],['请求调度',c.strategy==='serial'?'serial':'batch（direct 可仅一题）'],['截止',`${c.deadlineMs} ms`],['干预记录',state.interventions.length],['执行归属','服务端唯一实例']];$('runtime').innerHTML=metrics.map(([k,v])=>`<div class="metric-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+- $('result-note').classList.toggle('hidden',!state.reason&&!done);$('result-note').textContent=state.reason??(state.status==='succeeded'?'根验收器确认任务完成。局部技能成功不等于整局成功。':'');renderDetail();if(replaying)replayFrame();}
+-const eventName:Record<string,string>={state:'世界状态更新',run_created:'会话创建',command:'控制命令',control_transferred:'控制权转移',intervention:'环境干预',intervention_scheduled:'计划干预',run_ended:'实验结束',checkpoint_created:'保存检查点',engine:'引擎事件'};
+-function renderDetail(){if(selectedTab==='events'){$('activity').classList.remove('hidden');$('detail-json').classList.add('hidden');$('activity').innerHTML=events.filter(e=>e.type!=='state').slice(-70).reverse().map(e=>{const d=e.data as any;return `<div class="activity-item"><small>#${e.seq}</small><div><b>${esc(e.type==='engine'?d?.event?.type:eventName[e.type]??e.type)}</b><p>${esc(e.type==='command'?`${d.actor?.label??d.actor?.id} · ${d.action}`:e.type==='engine'?d?.sourceRunId??'':e.at?.slice(11,19))}</p></div></div>`;}).join('')||'<p class="empty-note">等待事件。关闭页面不停止实验。</p>';}
+- else{$('activity').classList.add('hidden');$('detail-json').classList.remove('hidden');$('detail-json').textContent=JSON.stringify(selectedTab==='decision'?state?.lastDecision:selectedTab==='skill'?{active:state?.activeSkill,lastResult:state?.lastSkillResult}:selectedTab==='recovery'?state?.diagnostics??{note:'该控制器无技能恢复日志'}:{...state?.config,taskSemantics:state?.config.kind==='game'?'task 字段仅兼容旧配置；此局根目标为实际主游戏 GOAL，不使用 energy 夹具。':'task 为判断实验的固定验收契约'},null,2);}}
+-async function refreshRuns(){if(!token)return;const list=await api('/api/lab/runs');$('run-list').innerHTML=list.runs.slice().reverse().map((r:any)=>`<button class="run-link ${state?.runId===r.runId?'active':''}" data-run="${esc(r.runId)}"><strong>${esc(r.config.kind==='game'?r.config.scenario:r.config.task)} · ${esc(r.config.strategy)}</strong><small>${esc(labels[r.status])} / ${esc(r.owner.label||r.owner.id)}</small><small>${esc(r.runId.slice(0,17))}…</small></button>`).join('')||'<p class="empty-note">还没有会话。<br>从 CLI 或下方创建。</p>';for(const b of document.querySelectorAll<HTMLButtonElement>('[data-run]'))b.onclick=()=>void openRun(b.dataset.run!).catch(e=>toast(e.message));}
+-async function openRun(id:string){imported=false;replaying=false;$('replay-bar').classList.add('hidden');const g=++connectGeneration;streamAbort?.abort();const next=await api(path(id));if(g!==connectGeneration)return;state=next;cursor=state!.lastSeq;const old=await api(`${path(id)}/events?after=0&limit=100`);if(g!==connectGeneration)return;events=old.events;history.replaceState(null,'',`/lab?run=${id}`);render();void refreshRuns();void refreshCheckpoints();streamAbort=new AbortController();void stream(id,g,streamAbort.signal);}
+-async function stream(id:string,g:number,signal:AbortSignal){while(!signal.aborted&&g===connectGeneration){try{const response=await fetch(`${path(id)}/stream?after=${cursor}`,{headers:{'x-gs-token':token},signal});if(!response.ok)throw Error('事件流连接失败');$('connection').textContent='事件流已连接';$('connection-dot').classList.remove('off');const reader=response.body!.getReader(),decode=new TextDecoder();let text='';while(!signal.aborted){const r=await reader.read();if(r.done)break;text+=decode.decode(r.value,{stream:true});let i;while((i=text.indexOf('\n\n'))>=0){const piece=text.slice(0,i);text=text.slice(i+2);const data=piece.split('\n').filter(l=>l.startsWith('data: ')).map(l=>l.slice(6)).join('\n');if(!data)continue;const e=JSON.parse(data) as LabEvent;if(g!==connectGeneration||signal.aborted)return;if(e.seq<=cursor)continue;cursor=e.seq;events.push(e);events=events.slice(-1000);if(e.type==='state'){state=e.data as LabView;render();if(terminal(state.status))void refreshRuns();}else renderDetail();}}}
+- catch(e){if(signal.aborted)return;$('connection').textContent='重连中 · 从事件序号继续';$('connection-dot').classList.add('off');}
+- if(!signal.aborted)await new Promise(r=>setTimeout(r,1000));}}
+-async function refreshCheckpoints(){if(!state||imported)return;const requested=state.runId;const data=await api(path(requested)+'/checkpoints');if(state?.runId!==requested||imported)return;$('checkpoint-list').innerHTML=data.checkpoints.map((c:any)=>`<option value="${esc(c.id)}">${esc(c.id==='initial'?'初始局面':c.label+' · #'+c.decisionSteps)}</option>`).join('');}
+-async function cmd(action:Command['action'],extras:Partial<Command>={}){if(!state||imported)return;const requested=state.runId;try{const r=await api(path(requested)+'/commands',{commandId:uid(),expectedControlVersion:state.controlVersion,actor,action,...extras});if(state?.runId!==requested||imported)return;state=r.state;render();if(r.checkpointId)await refreshCheckpoints();void refreshRuns();}catch(e){toast((e as Error).message);if(state?.runId===requested&&!imported){state=await api(path(requested));render();}}}
+-for(const a of ['start','step','pause','cancel','takeover'] as const)$(a).onclick=()=>void cmd(a);
++let token='',cap:any=null,state:LabView|null=null,events:LabEvent[]=[],cursor=0,streamAbort:AbortController|null=null,generation=0;
++let connected=false,pending=false,listing=true,replaying=false,imported=false,frames:LabView[]=[],frameIndex=0,report:any=null,tab='overview',decisionIndex=-1;
++let runs:LabView[]=[],checkpoints:any[]=[],lastSync='',historyComplete=true,selectedId:string|null=null;
++let paintTimer:ReturnType<typeof setTimeout>|undefined;
++const rawRefs=new Map<string,{title:string;value:unknown}>();let refCount=0;
++$('lab-app').innerHTML=layout;
++const renderer=new WorldRenderer($<HTMLCanvasElement>('world'));
++const current=()=>replaying?frames[frameIndex]??state:state;
++function badge(s:LabView){return `<span class="badge ${terminal(s.status)?s.status==='succeeded'?'success':'warning':['running','stepping'].includes(s.status)?'active':''}">${esc(STATUS[s.status]??s.status)}</span>`;}
++function factsGrid(rows:[string,unknown][]){return `<dl class="facts-grid">${rows.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v??'未记录')}</dd></div>`).join('')}</dl>`;}
++function rawButton(title:string,value:unknown){const id=`raw-${++refCount}`;rawRefs.set(id,{title,value});return `<button class="text-button" data-evidence="${id}">查看原始证据 ↗</button>`;}
++let toastTimer:ReturnType<typeof setTimeout>;function toast(message:string){text('toast',message);hide('toast',false);clearTimeout(toastTimer);toastTimer=setTimeout(()=>hide('toast',true),6500);}
++const dialogTriggers=new Map<string,HTMLElement>();
++function openDialog(id:string){const d=$<HTMLDialogElement>(id);if(d.open)return;dialogTriggers.set(id,document.activeElement as HTMLElement);d.showModal();const target=d.querySelector<HTMLElement>('input:not([type="radio"]):not([type="checkbox"]),select,button');target?.focus();}
++function closeDialog(id:string){$<HTMLDialogElement>(id).close();}
++for(const d of document.querySelectorAll<HTMLDialogElement>('dialog'))d.addEventListener('close',()=>{const trigger=dialogTriggers.get(d.id);if(trigger?.isConnected&&trigger.getClientRects().length)trigger.focus();});
++document.addEventListener('click',e=>{const target=e.target as Element;const close=target.closest<HTMLElement>('[data-close]');if(close){closeDialog(close.dataset.close!);return;}
++ const raw=target.closest<HTMLElement>('[data-evidence]');if(raw){const entry=rawRefs.get(raw.dataset.evidence!);if(entry){text('evidence-title',entry.title);text('evidence-json',JSON.stringify(entry.value,null,2));openDialog('evidence-dialog');}}
++ const run=target.closest<HTMLElement>('[data-run]');if(run)void openRun(run.dataset.run!).catch(error=>toast(String(error)));
++ const step=target.closest<HTMLElement>('[data-seq]');if(step){const ev=events.find(x=>x.seq===Number(step.dataset.seq));if(ev){text('evidence-title',`事件 #${ev.seq}`);text('evidence-json',JSON.stringify(ev,null,2));openDialog('evidence-dialog');}}
++});
++async function api(path:string,body?:unknown){const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'x-gs-token':token,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});const data=await r.json();if(!r.ok)throw Error(`${rec(data.error).code??r.status}: ${rec(data.error).message??data.error}`);return data;}
++const path=(id=state?.runId)=>`/api/lab/runs/${encodeURIComponent(id??'')}`;
++function setConnection(ok:boolean,label:string){connected=ok;text('connection',label);$('connection-dot').classList.toggle('offline',!ok);if(!listing)queuePaint();}
++function queuePaint(){if(paintTimer!==undefined)return;paintTimer=setTimeout(()=>{paintTimer=undefined;if(!listing)render();},60);}
++function setTab(next:string,updateUrl=true){if(!['overview','decision','diagnostics','config'].includes(next))next='overview';tab=next;
++ for(const b of document.querySelectorAll<HTMLButtonElement>('[data-tab]')){const on=b.dataset.tab===tab;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;hide('panel-'+b.dataset.tab!,!on);}
++ if(!listing)render();if(updateUrl&&!imported&&state)history.replaceState(null,'',`/lab?run=${encodeURIComponent(state.runId)}${tab==='overview'?'':`&tab=${tab}`}`);
++}
++for(const b of document.querySelectorAll<HTMLButtonElement>('[data-tab]')){b.onclick=()=>setTab(b.dataset.tab!);b.onkeydown=e=>{const tabs=[...document.querySelectorAll<HTMLButtonElement>('[data-tab]')];let i=tabs.indexOf(b);if(e.key==='ArrowRight')i=(i+1)%tabs.length;else if(e.key==='ArrowLeft')i=(i-1+tabs.length)%tabs.length;else if(e.key==='Home')i=0;else if(e.key==='End')i=tabs.length-1;else return;e.preventDefault();tabs[i]!.focus();setTab(tabs[i]!.dataset.tab!);};}
++function showList(push=true){generation++;streamAbort?.abort();streamAbort=null;listing=true;replaying=false;imported=false;selectedId=null;hide('list-page',false);hide('run-page',true);if(push)history.pushState(null,'','/lab');void refreshRuns().catch(e=>toast(String(e)));}
++$('brand-home').onclick=e=>{e.preventDefault();showList();};$('home').onclick=()=>showList();$('back-list').onclick=()=>showList();
++function renderList(){const q=val('run-search').trim().toLowerCase(),filter=val('status-filter');const filtered=runs.filter(r=>(`${titleOf(r.config)} ${r.owner.label} ${r.runId} ${r.config.strategy}`.toLowerCase().includes(q))&&(filter==='all'||filter==='active'&&!terminal(r.status)||filter==='succeeded'&&r.status==='succeeded'||filter==='attention'&&['blocked','failed','stopped','fault'].includes(r.status)||filter==='ended'&&terminal(r.status)));
++ text('list-count',`${filtered.length} 场实验`);
++ html('run-list',filtered.length?filtered.map(r=>`<button class="run-row" data-run="${esc(r.runId)}"><span class="run-name"><span class="run-icon">${r.config.kind==='game'?'◈':'⌘'}</span><span><strong>${esc(titleOf(r.config))}</strong><small>${r.config.kind==='game'?'完整任务':'判断组合'} · ${esc(STRATEGIES[r.config.strategy])}<span class="run-id-small">${esc(r.runId.slice(0,15))}…</span></small></span></span><span>${badge(r)}</span><span class="row-model">${esc(({rule:'程序化参考',jev:'Jev',llm:'LLM'} as Record<string,string>)[r.config.backend])}${r.config.generator==='llm'?' + LLM 生成':''}<small>${esc(r.config.backend==='rule'&&r.config.generator==='local'?'无实网配置':'实际用量见实验详情')}</small></span><span class="row-owner">${esc(r.owner.label||r.owner.id)}<small>${esc(new Date(r.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}))}</small></span><span class="row-arrow">↗</span></button>`).join(''):`<div class="empty-state"><span class="empty-symbol">◎</span><h2>${q||filter!=='all'?'没有匹配的实验':'从一场实验开始'}</h2><p>${q||filter!=='all'?'调整筛选，或创建新的实验。':'点击右上角「新建实验」，也可以让外部 Agent 从 CLI 创建。'}</p><button class="primary" id="empty-create">＋ 新建实验</button></div>`);
++ document.getElementById('empty-create')?.addEventListener('click',()=>beginCreate());
++}
++// The DOM helper is intentionally strict elsewhere; the empty state is optional.
++async function refreshRuns(){if(!token)return;const data=await api('/api/lab/runs');runs=list(data.runs).reverse() as LabView[];renderList();}
++$('run-search').oninput=renderList;$('status-filter').onchange=renderList;$('refresh').onclick=()=>void refreshRuns().catch(e=>toast(String(e)));
++async function historyUntil(id:string,limitSeq:number){const all:LabEvent[]=[];let after=0;historyComplete=true;while(after<limitSeq){const data=await api(`${path(id)}/events?after=${after}&limit=1000`);const page=list(data.events) as LabEvent[];if(!page.length)break;for(const e of page)if(e.seq<=limitSeq)all.push(e);const next=Number(data.nextCursor??page.at(-1)!.seq);if(next<=after)break;after=next;if(!data.hasMore)break;if(all.length>40000){historyComplete=false;break;}}return all;}
++async function openRun(id:string,push=true){const g=++generation;streamAbort?.abort();pending=false;const next=await api(path(id));if(g!==generation)return;if(!isView(next))throw Error('服务端未返回有效的实验快照');state=next;selectedId=id;listing=false;imported=false;replaying=false;report=null;frames=[];decisionIndex=-1;cursor=next.lastSeq;events=await historyUntil(id,cursor);if(g!==generation)return;
++ hide('list-page',true);hide('run-page',false);hide('replay-bar',true);lastSync=new Date().toISOString();if(push)history.pushState(null,'',`/lab?run=${encodeURIComponent(id)}`);setTab('overview',false);streamAbort=new AbortController();void stream(id,g,streamAbort.signal);void refreshRuns().catch(()=>{});$('title').setAttribute('tabindex','-1');$('title').focus({preventScroll:true});}
++async function stream(id:string,g:number,signal:AbortSignal){while(!signal.aborted&&g===generation){try{const response=await fetch(`${path(id)}/stream?after=${cursor}`,{headers:{'x-gs-token':token},signal});if(!response.ok||!response.body)throw Error('事件流未连接');if(signal.aborted||g!==generation)return;setConnection(true,'实时已连接');const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
++ try{while(!signal.aborted){const r=await reader.read();if(r.done)break;buffer+=decoder.decode(r.value,{stream:true});if(buffer.length>16*1024*1024)throw Error('事件超过界面接收上限');let i;while((i=buffer.indexOf('\n\n'))>=0){const piece=buffer.slice(0,i);buffer=buffer.slice(i+2);const raw=piece.split('\n').filter(l=>l.startsWith('data: ')).map(l=>l.slice(6)).join('\n');if(!raw)continue;const e=JSON.parse(raw) as LabEvent;if(signal.aborted||g!==generation)return;if(e.runId!==id||e.seq<=cursor)continue;cursor=e.seq;events.push(e);if(events.length>40000){events=events.slice(-40000);historyComplete=false;}lastSync=e.at;
++ if(e.type==='state'&&isView(e.data)){// Never let a late HTTP command response regress an SSE snapshot.
++  if(!state||e.data.lastSeq>=state.lastSeq)state=e.data;
++ }queuePaint();}}
++ }finally{try{await reader.cancel();}catch{/* already closed */}}
++ if(!signal.aborted)setConnection(false,'连接中断，正在续读');
++ }catch(e){if(signal.aborted||g!==generation)return;setConnection(false,'连接中断，正在续读');}
++ if(!signal.aborted)await new Promise(resolve=>setTimeout(resolve,1000));}}
++function render(){const s=current();if(!s)return;rawRefs.clear();refCount=0;
++ text('title',titleOf(s.config));text('crumb-title',titleOf(s.config));text('goal',goalOf(s));text('run-status',(replaying?'历史 · ':'')+(imported?'归档 · ':'')+(STATUS[s.status]??s.status));$('run-status').className=`badge ${s.status==='succeeded'?'success':terminal(s.status)?'warning':['running','stepping'].includes(s.status)?'active':''}`;
++ text('owner',`${s.owner.kind==='agent'?'Agent 主持':'人工主持'} · ${s.owner.label||s.owner.id}`);text('source-caption',actualSource(s));
++ html('run-tags',`<span>${s.config.kind==='game'?'完整任务实验':'判断组合实验'}</span><span>${esc(STRATEGIES[s.config.strategy])}</span><span>配置：${esc(s.config.backend==='rule'?'程序规则':s.config.backend.toUpperCase())}${s.config.generator==='llm'?' + LLM 生成':''}</span><span>${s.owner.id===actor.id?'你拥有控制权':'当前仅观察'}</span>${s.interventions.length?`<span class="tag-warning">${s.interventions.length} 条环境干预</span>`:''}`);
++ hide('stale-banner',connected||imported||replaying);text('stale-banner',`连接已中断，下面是最后确认的快照（${lastSync?new Date(lastSync).toLocaleTimeString('zh-CN'):'时间未记录'}）。世界可能仍在服务端运行；重连后从事件序号继续。`);
++ hide('diagnostic-dot',!['blocked','failed','fault','stopped'].includes(s.status));
++ const a=actionsFor(state??s,actor.id,{replay:replaying,imported,connected,pending});
++ for(const id of ['start','step','pause','takeover']){hide(id,!a.visible.includes(id as Command['action']));$<HTMLButtonElement>(id).disabled=!a.enabled[id];}
++ text('start',s.status==='paused'?'继续运行':'开始运行');
++ for(const id of ['cancel','checkpoint','edit'])$<HTMLButtonElement>(id).disabled=!(a.enabled[id==='edit'?(val('edit-when')==='scheduled'?'schedule':'intervene'):id]);
++ hide('cancel',!a.own||a.done||replaying||imported);hide('intervene-open',!a.own||a.done||replaying||imported);
++ $<HTMLButtonElement>('intervene-open').disabled=!a.quiet||!connected||pending;
++ $<HTMLButtonElement>('fork-open').disabled=imported||replaying||!connected||pending;
++ $<HTMLButtonElement>('fork').disabled=imported||!connected||pending;
++ $<HTMLButtonElement>('config-copy').disabled=!connected||!cap;$<HTMLButtonElement>('clone-config').disabled=!connected||!cap;
++ $<HTMLButtonElement>('replay').disabled=pending||(!imported&&!connected);text('replay',replaying?'选择回放时刻':'回放');
++ text('operation-note',imported?'当前是离线归档。只读查看和导出，不向服务端发出写入。':replaying?'回放期间所有实验写操作不可用。返回实时后再操作。':!a.own?'当前由其他操作员控制。接管会暂停后续调度并留下记录。':'所有操作由服务端校验版本、权限和执行边界。');
++ text('progress',`${s.world.delivered} / ${s.world.target}`);text('progress-note',terminal(s.status)?(s.status==='succeeded'?'根验收通过':'尚未获得根任务成功'):'局部成功不等于整局完成');
++ text('energy',`${s.world.energy} / ${s.world.maxEnergy}`);text('bag-note',`背包 ${s.world.bag} / ${s.world.capacity} · 已执行 ${s.physicalActions} 步`);text('external',s.externalRequests);const simulated=actualSource(s).includes('测试替身');text('external-label',simulated?'提供商路径计数 · 测试替身':'实际外部请求');text('request-note',simulated?'原始账本计数，不是实网性能证据':`${s.requests} 次判断 / 生成请求（含本地）`);text('elapsed',duration(s.elapsedMs));text('elapsed-note',`整局上限 ${duration(s.config.deadlineMs)}`);
++ const st=statusCopy(s);const showStatus=terminal(s.status)||['pausing','cancelling'].includes(s.status);$('stop-detail').className=`status-summary ${st.tone}${showStatus?'':' hidden'}`;text('status-title',st.title);text('status-body',st.body);text('status-reason',s.reason??'');hide('status-reason',!s.reason);text('status-detail',s.status==='succeeded'?'回看任务过程 →':'查看原因与证据 →');
++ renderer.setState(s.world,replaying);text('world-mode',replaying?'所选时刻 · 只读':'服务端唯一世界');text('world-label',`物理回合 ${s.world.turn} · 背包 ${s.world.bag}/${s.world.capacity}`);text('sequence-label',`事件 #${s.lastSeq} / 世界 v${s.worldRevision}`);
++ const f=flowOf(s);text('root-goal',goalOf(s));text('current-skill',f.skill);text('current-phase',f.phase);text('immediate-task',f.immediate);text('process-status-note',f.detail);
++ const latest=events.filter(e=>e.seq<=s.lastSeq).at(-1);const name=latest?unwrap(latest).type:'';
++ const working=s.busy?['skill_generation_started','repair_requested'].includes(name)?'正在生成或验证技能':'正在推进决策量子':STATUS[s.status]??s.status;
++ text('process-status-title',working);$('process-pulse').classList.toggle('working',s.busy&&!replaying);text('process-level',rec(s.activeSkill).spec?'子 G/S 活跃':s.config.kind==='judgment'?'固定任务':'父层 / 已返回');
++ const keys=keyEvents(events,s.lastSeq);html('activity',keys.slice(-5).reverse().map(e=>`<button class="timeline-item ${e.tone}" data-seq="${e.seq}"><span class="timeline-dot"></span><span><b>${esc(e.title)}</b><small>${esc(e.detail)}</small></span><time>#${e.seq}</time><span aria-hidden="true">↗</span></button>`).join('')||'<div class="empty-note">尚未开始。首个决策之后，这里会出现可追溯的关键过程。</div>');
++ if(tab==='decision')renderDecisions(s);if(tab==='diagnostics')renderDiagnostics(s);if(tab==='config')renderConfig(s);
++ if(replaying){text('replay-position',`${frameIndex+1} / ${frames.length}`);text('replay-caption',`状态 #${s.lastSeq} · ${s.world.turn} 回合 · 所有面板与指标均来自此时刻`);hide('live',imported);$<HTMLButtonElement>('replay-prev').disabled=frameIndex===0;$<HTMLButtonElement>('replay-next').disabled=frameIndex>=frames.length-1;}
++}
++function renderDecisions(s:LabView){const ds=decisionsFrom(events,s);const selected=decisionIndex>=0?Math.min(decisionIndex,ds.length-1):ds.length-1;html('decision-select',ds.map((d,i)=>`<option value="${i}" ${i===selected?'selected':''}>${i+1} · ${rec(d.packet).level==='parent'?'父层技能选择':rec(d.packet).level==='child'?'子层动作判断':'任务判断'} · ${d.status==='abstained'?'不执行':d.status==='error'?'请求错误':d.status==='unreported'?'已记录输入':d.choice?'已选出候选':'返回'} · ${esc(sourceLabel(d.source))}</option>`).join('')||'<option>尚无判断记录</option>');
++ const d=ds[selected];if(!d){html('decision-content','<div class="empty-state small-empty"><h3>尚未发生判断</h3><p>开始实验后，问题、候选与返回结果会在这里呈现。</p></div>');}
++ else {const p=rec(d.packet),judgment=rec(d.judgment),cs=list(p.candidates),prob=rec(judgment.probabilities),chosen=d.choice;const context=rec(p.taskContext??rec(p.projection).taskContext);
++ const result=d.status==='error'?'判断请求失败':d.status==='abstained'?'返回「不执行」':chosen?'已选择候选':'返回值未在此记录中提供';
++ html('decision-content',`<div class="decision-summary"><span class="subtle-tag">${esc(sourceLabel(d.source))}</span><h3>${esc(p.goal??'当前任务判断')}</h3><p>${esc(result)}${d.latencyMs!==undefined?' · '+esc(duration(d.latencyMs)):''}</p></div>${factsGrid([['问题版本',p.questionVersion],['状态 / 策略版本',`${p.snapshotRevision??'—'} / ${p.policyVersion??'—'}`],['独立问题',d.questions],['实际外部请求',d.externalRequests]])}
++ ${context.immediateObjective?`<div class="callout"><b>当前即时任务</b><p>${esc(rec(context.immediateObjective).description)}</p></div>`:''}
++ <div class="section-heading"><h3>本次候选</h3><span class="muted">${cs.length} 个 · 保持记录中的顺序</span></div><div class="candidate-table">${cs.map(c=>`<div class="candidate-row ${chosen===c.id?'chosen':''}"><span class="candidate-marker">${chosen===c.id?'✓':'·'}</span><div><b>${esc(c.description??c.id)}</b><small class="mono">${esc(c.id)}</small></div><span>${typeof prob[c.id]==='number'?prob[c.id].toFixed(3):'未报告'}</span>${rawButton('候选事实与执行数据',c)}</div>`).join('')}</div><p class="field-help">数值为原始判断分布或确定性路由标记，不是任务成功率；“未报告”不补算为零。</p><div class="evidence-actions">${rawButton('本次完整判断',d)}${rawButton('本次输入事实',p)}</div>
++ <details class="evidence-details"><summary>父子技能与局部结果</summary>${factsGrid([['当前技能',rec(rec(s.activeSkill).spec).title??'无活跃子技能'],['最近局部结果',rec(s.lastSkillResult).localSucceeded===true?'局部成功':rec(s.lastSkillResult).localSucceeded===false?'未获局部成功':'尚未记录']])}${rawButton('当前技能与最近实际结果',{active:s.activeSkill,last:s.lastSkillResult})}</details>`);}
++ const keys=keyEvents(events,s.lastSeq);html('full-timeline',`${!historyComplete?'<p class="callout warning">界面缓存不是完整历史；请导出报告获取全部事件。</p>':''}${keys.map(e=>`<button class="timeline-item ${e.tone}" data-seq="${e.seq}"><span class="mono">#${e.seq}</span><span><b>${esc(e.title)}</b><small>${esc(e.detail)}</small></span><span>↗</span></button>`).join('')}${rawButton('全部原始事件（当前时刻以前）',events.filter(e=>e.seq<=s.lastSeq))}`);
++}
++$('decision-select').onchange=()=>{decisionIndex=Number(val('decision-select'));render();};
++function renderDiagnostics(s:LabView){const d=rec(s.diagnostics),f=rec(d.latestFailure),rep=rec(rec(d.budgets).repairs),st=statusCopy(s);const has=!!s.reason||Object.keys(f).length>0;
++ html('diagnostics-content',`<div class="diagnostic-verdict ${has?'warning':''}"><span class="overline">${has?'当前诊断':'暂无阻塞证据'}</span><h3>${esc(has?st.title:'尚未记录需要处理的问题')}</h3><p>${esc(has?st.body:'这不等于无缺陷；后续的失败、修复和干预会在这里记录。')}</p>${s.reason?`<code>${esc(s.reason)}</code>`:''}</div><div class="config-columns"><section class="surface"><h3>预算与执行</h3>${factsGrid([['物理动作',`${s.physicalActions} / ${s.config.maxActions}`],['请求数',`${s.requests} / ${s.config.maxRequests}`],['修复次数',rep.limit===undefined?'本控制器未报告':`${rep.used} / ${rep.limit}`],['墙钟 / 上限',`${duration(s.elapsedMs)} / ${duration(s.config.deadlineMs)}`],['引擎推进耗时',duration(s.engineWorkMs)],['环境干预',s.interventions.length]])}</section><section class="surface"><h3>问题定位</h3>${factsGrid([['最近失败',f.reason??'未记录'],['子技能实际动作',rec(f.outcome).steps],['问题组织',STRATEGIES[s.config.strategy]],['请求调度',s.config.strategy==='serial'?'逐题串行':'合批接口（直接选择可能仅一题）'],['原始状态',s.status],['控制版本',s.controlVersion]])}</section></div><div class="evidence-actions">${rawButton('完整修复诊断',s.diagnostics??{note:'此控制器未提供技能恢复日志'})}${rawButton('最近一次判断',s.lastDecision)}${rawButton('环境干预记录',s.interventions)}${rawButton('运行时原始返回',s.outcome)}</div><p class="field-help">受阻的运行不能透明继续；更改条件应建立新分支。查看与导出不会自动请求模型。</p>`);
++}
++function renderConfig(s:LabView){const c=s.config;html('config-content',`<div class="config-columns"><section class="surface"><h3>研究内容</h3>${factsGrid([['实验范围',c.kind==='game'?'完整任务':'判断组合'],[c.kind==='game'?'地图':'固定任务',titleOf(c)],['根目标',goalOf(s)],['控制器',c.kind==='game'?({hierarchy:'父子 G/S',program:'完整序列搜索',rules:'完整预置规则'}[c.controller]):'固定任务 G/S'],['判断组织',STRATEGIES[c.strategy]],['经验使用',c.experience]])}</section><section class="surface"><h3>来源与资源</h3>${factsGrid([['配置的判断来源',c.backend],['技能生成',c.kind==='game'?c.generator:'不适用'],['实际请求记录',actualSource(s)],['请求授权',c.allowLive?'本局已明确授权':'未授权真实模型'],['请求 / 问题上限',`${c.maxRequests} / ${c.maxQuestions}`],['整局截止',duration(c.deadlineMs)],['顺序种子',c.orderSeed],['合成延迟',`${c.delayMs} ms / 请求`]])}</section></div>${c.kind==='game'?'<p class="field-help">兼容配置中的 task 字段不改变主游戏目标；此处只显示实际生效的地图与根任务。</p>':''}
++ <section class="surface lineage"><h3>运行身份与可复现性</h3>${factsGrid([['运行 ID',s.runId],['控制者',`${s.owner.kind} · ${s.owner.id}`],['创建于',s.createdAt],['界面版本','0.4.3'],['运行时协议版本',s.version],['资源初始可见',c.kind==='judgment'?(c.maskResources?'需要读取':'可见'):'主世界既定可见信息']])}<div class="evidence-actions">${rawButton('完整原始配置',c)}${rawButton('分支与经验来源',s.lineage)}${rawButton('受控干预脚本',c.interventions)}</div></section><p class="field-help">v0.4.3 仅修改界面。引擎与 Lab 状态协议沿用 v0.4.2，不以 UI 版本冒充运行时变更。</p>`);}
++$('status-detail').onclick=()=>setTab(state?.status==='succeeded'?'decision':'diagnostics');$('inspect-current').onclick=()=>setTab('decision');$('all-process').onclick=()=>setTab('decision');
++async function cmd(action:Command['action'],extras:Partial<Command>={}){if(!state||imported||replaying||pending||!connected)return;const id=state.runId,g=generation;pending=true;render();try{const result=await api(path(id)+'/commands',{commandId:uid(),expectedControlVersion:state.controlVersion,actor,action,...extras});if(g!==generation||state?.runId!==id)return;
++ if(!state||result.state.lastSeq>=state.lastSeq)state=result.state;render();if(result.checkpointId){await refreshCheckpoints();$<HTMLSelectElement>('checkpoint-list').value=result.checkpointId;checkpointSummary();toast('检查点已保存。');}void refreshRuns().catch(()=>{});return result;
++ }catch(error){if(g===generation){toast(String(error));try{const latest=await api(path(id));if(g===generation&&isView(latest)&&latest.lastSeq>=(state?.lastSeq??0))state=latest;}catch{setConnection(false,'服务连接不可用');}}return null;}finally{if(g===generation){pending=false;render();}}}
++$('step').onclick=()=>void cmd('step');$('start').onclick=()=>void cmd('start');$('pause').onclick=()=>void cmd('pause');
++let confirmed:(()=>void)|undefined;
++function confirm(title:string,body:string,action:()=>void){text('confirm-title',title);text('confirm-body',body);confirmed=action;openDialog('confirm-dialog');}
++$('confirm-action').onclick=()=>{closeDialog('confirm-dialog');confirmed?.();confirmed=undefined;};
++$('takeover').onclick=()=>confirm('接管并暂停这场实验？','当前量子可能完成，之后由你控制。旧 Agent 的新写入会被拒绝；接管会记录到实验轨迹。',()=>void cmd('takeover'));
++$('cancel').onclick=()=>{closeDialog('more-dialog');confirm('取消本次实验？','取消后不能继续本次运行。已执行的动作不会回滚，报告与原始证据仍可导出。',()=>void cmd('cancel'));};
++$('more-open').onclick=()=>{render();openDialog('more-dialog');};
++$('copy-id').onclick=async()=>{if(!state)return;try{await navigator.clipboard.writeText(state.runId);toast('运行 ID 已复制。');}catch{text('evidence-title','运行 ID');text('evidence-json',state.runId);openDialog('evidence-dialog');}};
++function errorIn(id:string,e:unknown){text(id,e instanceof Error?e.message:String(e));hide(id,false);}
++function beginCreate(c?:LabConfig){$<HTMLFormElement>('create-form').reset();hide('create-error',true);const base=rec(c??cap?.defaults);const kind=c?.kind??'game';for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="scope"]'))radio.checked=radio.value===kind;
++ for(const [id,key]of [['scenario','scenario'],['task','task'],['strategy','strategy'],['controller','controller'],['backend','backend'],['generator','generator'],['experience','experience'],['seed','orderSeed'],['delay','delayMs'],['requests','maxRequests'],['deadline','deadlineMs'],['max-questions','maxQuestions'],['max-actions','maxActions'],['max-steps','maxSteps'],['max-search','maxSearchNodes']]){if(base[key!]!==undefined)$<HTMLInputElement>(id!).value=String(base[key!]);}
++ $<HTMLInputElement>('allow-live').checked=false;$<HTMLInputElement>('mask').checked=kind==='judgment'&&!!c?.maskResources;$<HTMLTextAreaElement>('interventions').value=c?.interventions.length?JSON.stringify(c.interventions,null,2):'';
++ $<HTMLSelectElement>('preset').value=c?(c.backend==='rule'&&c.generator==='local'?'offline':c.backend==='jev'&&c.generator==='local'?'jev':c.backend==='jev'&&c.generator==='llm'?'live':'custom'):'offline';
++ if(!c){$<HTMLSelectElement>('backend').value='rule';$<HTMLSelectElement>('generator').value='local';$<HTMLSelectElement>('strategy').value='direct';}
++ $<HTMLDetailsElement>('advanced-config').open=false;updateCreate(false);openDialog('create-dialog');}
++const scope=()=>document.querySelector<HTMLInputElement>('input[name="scope"]:checked')?.value??'game';
++function updateCreate(fromPreset=false){const game=scope()==='game',preset=val('preset');if(fromPreset&&preset!=='custom'){$<HTMLSelectElement>('backend').value=preset==='offline'?'rule':'jev';$<HTMLSelectElement>('generator').value=preset==='live'&&game?'llm':'local';$<HTMLSelectElement>('controller').value='hierarchy';$<HTMLInputElement>('allow-live').checked=false;if(preset!=='offline'&&Number(val('requests'))===512)$<HTMLInputElement>('requests').value='80';}
++ $<HTMLInputElement>('deadline').max=game?'3600000':'120000';
++ hide('game-fields',!game);hide('task-field',game);hide('controller-field',!game);hide('generator-field',!game);hide('mask-field',game);
++ if(!game)$<HTMLSelectElement>('generator').value='local';
++ const reference=game&&val('controller')!=='hierarchy';if(reference){$<HTMLSelectElement>('backend').value='rule';$<HTMLSelectElement>('generator').value='local';$<HTMLInputElement>('delay').value='0';}
++ $<HTMLSelectElement>('backend').disabled=reference;$<HTMLSelectElement>('generator').disabled=reference;
++ const live=val('backend')!=='rule'||(game&&val('generator')==='llm');hide('live-permission',!live);$<HTMLInputElement>('allow-live').required=live;
++ if(val('backend')!=='rule')$<HTMLInputElement>('delay').value='0';$<HTMLInputElement>('delay').disabled=val('backend')!=='rule'||reference;
++ for(const id of ['backend','generator','preset']){const select=$<HTMLSelectElement>(id);for(const opt of select.options){if(id==='preset')opt.disabled=opt.value==='jev'&&!cap?.backends?.jev?.ready||opt.value==='live'&&(!game||!cap?.backends?.jev?.ready||!cap?.backends?.llm?.ready);else opt.disabled=opt.value!=='rule'&&opt.value!=='local'&&!cap?.backends?.[opt.value]?.ready;}}
++ const ready=(!live)||((val('backend')==='rule'||cap?.backends?.[val('backend')]?.ready)&&(val('generator')!=='llm'||cap?.backends?.llm?.ready));$<HTMLButtonElement>('create').disabled=!token||!ready;
++ text('live-readiness',ready?'使用服务端现有密钥。授权只适用于这一次新实验，不沿用原实验的支付许可。':'所需模型尚未在服务端配置；请检查 .env，不能静默退回规则。');
++ text('strategy-help',({direct:'一个整体选择问题。保留“不执行”，不强制从坏选项里选一个。',batch:'独立的适用性与优先级问题合并请求；合批不等于计算免费。',serial:'与合批使用相同问题，但逐题发出请求，可能增加等待与调用数。',dependent:'第二轮选择依赖第一轮实际返回的适用性判断。'} as Record<string,string>)[val('strategy')]);
++ text('create-summary',`${game?'完整任务 · '+(SCENARIOS[val('scenario')]??val('scenario')):'判断组合 · '+(TASKS[val('task')]?.title??val('task'))} / ${STRATEGIES[val('strategy')]} / ${live?'真实模型配置':'程序化参考'}。创建后先保持就绪；原实验不会改变。`);}
++$('new-run').onclick=()=>beginCreate();$('config-copy').onclick=()=>state&&beginCreate(state.config);$('clone-config').onclick=()=>{closeDialog('more-dialog');if(state)beginCreate(state.config);};
++$('preset').onchange=()=>updateCreate(true);for(const el of document.querySelectorAll<HTMLInputElement>('input[name="scope"]'))el.onchange=()=>updateCreate(true);
++for(const id of ['controller','backend','generator','strategy','scenario','task'])$(id).onchange=()=>{if(['controller','backend','generator'].includes(id))$<HTMLSelectElement>('preset').value='custom';updateCreate(false);};
++$('create-form').addEventListener('invalid',e=>{const el=e.target as HTMLElement;el.closest('details')?.setAttribute('open','');},true);
++$('create-form').onsubmit=async e=>{e.preventDefault();hide('create-error',true);try{const game=scope()==='game';const interventions=val('interventions').trim()?JSON.parse(val('interventions')):[];if(!Array.isArray(interventions))throw Error('干预脚本必须是 JSON 数组。');const c={kind:scope(),task:val('task'),scenario:val('scenario'),controller:val('controller'),strategy:val('strategy'),backend:val('backend'),generator:game?val('generator'):'local',experience:val('experience'),orderSeed:Number(val('seed')),delayMs:Number(val('delay')),maxRequests:Number(val('requests')),maxQuestions:Number(val('max-questions')),maxActions:Number(val('max-actions')),maxSteps:Number(val('max-steps')),maxSearchNodes:Number(val('max-search')),deadlineMs:Number(val('deadline')),maskResources:!game&&checked('mask'),allowLive:checked('allow-live'),interventions};
++ $<HTMLButtonElement>('create').disabled=true;const created=await api('/api/lab/runs',{requestId:uid(),actor,config:c});closeDialog('create-dialog');await openRun(created.runId);toast('实验已创建，尚未开始。');}catch(error){errorIn('create-error',error);}finally{updateCreate(false);}};
++async function refreshCheckpoints(){if(!state||imported)return;const id=state.runId,data=await api(path(id)+'/checkpoints');if(state?.runId!==id||imported)return;checkpoints=list(data.checkpoints);html('checkpoint-list',checkpoints.map(c=>`<option value="${esc(c.id)}">${esc(c.id==='initial'?'初始局面':c.label+' · 回合 '+c.turn)}</option>`).join(''));checkpointSummary();}
++function checkpointSummary(){const cp=checkpoints.find(c=>c.id===val('checkpoint-list'));text('checkpoint-summary',cp?`${cp.id==='initial'?'初始快照':cp.label} · 物理回合 ${cp.turn??'—'} · 世界版本 ${cp.worldRevision??'—'}。新实验重置控制器阶段与请求计数，不重置剩余物理世界预算。`:'读取检查点…');}
++$('checkpoint-list').onchange=checkpointSummary;
++$('fork-open').onclick=async()=>{if(!state)return;closeDialog('more-dialog');$<HTMLInputElement>('inherit').checked=false;$<HTMLInputElement>('fork-allow-live').checked=false;$<HTMLSelectElement>('fork-strategy').value=state.config.strategy;$<HTMLInputElement>('fork-requests').value=String(state.config.maxRequests);hide('fork-live',state.config.backend==='rule'&&state.config.generator==='local');hide('fork-error',true);try{await refreshCheckpoints();openDialog('fork-dialog');}catch(error){toast(String(error));}};
+ $('checkpoint').onclick=()=>void cmd('checkpoint',{label:`网页检查点 · ${state?.decisionSteps??0}`});
+-$('edit').onclick=()=>void cmd('intervene',{tool:val('tool') as NonNullable<Command['tool']>,point:{x:Number(val('point-x')),y:Number(val('point-y'))},expectedWorldRevision:state!.worldRevision});
+-$('fork').onclick=async()=>{if(!state)return;try{const v=await api(path()+'/forks',{requestId:uid(),actor,checkpointId:val('checkpoint-list'),memory:check('inherit')?'inherit':'none',config:state.config.backend!=='rule'||state.config.generator==='llm'?{allowLive:check('allow-live'),maxRequests:Number(val('requests'))}:{}});await openRun(v.runId);}catch(e){toast((e as Error).message);}};
+-$('refresh').onclick=()=>void refreshRuns().catch(e=>toast(e.message));
+-$('kind').onchange=()=>{$('task-field').classList.toggle('hidden',val('kind')==='game');$('game-fields').classList.toggle('hidden',val('kind')!=='game');$<HTMLInputElement>('mask').disabled=val('kind')==='game';};
+-$('create-form').onsubmit=async e=>{e.preventDefault();try{const c={kind:val('kind'),task:val('task'),scenario:val('scenario'),controller:val('controller'),strategy:val('strategy'),backend:val('backend'),orderSeed:Number(val('seed')),delayMs:Number(val('delay')),maxRequests:Number(val('requests')),deadlineMs:Number(val('deadline')),maskResources:val('kind')==='judgment'&&check('mask'),allowLive:check('allow-live')};const v=await api('/api/lab/runs',{requestId:uid(),actor,config:c});await openRun(v.runId);}catch(e){toast((e as Error).message);}};
+-for(const b of document.querySelectorAll<HTMLButtonElement>('[data-tab]'))b.onclick=()=>{selectedTab=b.dataset.tab!;renderDetail();};
+-let report:any=null;
+-function loadReplay(data:any){report=data;frames=[data.initial];let prev='';for(const e of data.events??[])if(e.type==='state'&&e.data?.world){const key=JSON.stringify(e.data.world);if(key!==prev){frames.push(e.data.world);prev=key;}}if(!frames.length||!frames[0])throw Error('报告缺少世界快照');replaying=true;$('replay-bar').classList.remove('hidden');$<HTMLInputElement>('replay-slider').max=String(frames.length-1);$<HTMLInputElement>('replay-slider').value='0';replayFrame();render();}
+-function replayFrame(){const i=Number(val('replay-slider'));if(frames[i])renderer.setState(frames[i]!,true);$('replay-position').textContent=`${i+1}/${frames.length}`;const f=frames[i];if(f){$('world-label').textContent=`只读回放 · 回合 ${f.turn} · 能量 ${f.energy} · 交付 ${f.delivered}/5 · 背包 ${f.bag}`;$('sequence-label').textContent='上方计数为整局总计';}}
+-$('replay-slider').oninput=replayFrame;
+-$('replay').onclick=async()=>{try{loadReplay(imported?report:await api(path()+'/export'));}catch(e){toast((e as Error).message);}};
+-$('live').onclick=()=>{if(imported){toast('这是离线报告，没有正在运行的服务端会话。');return;}replaying=false;$('replay-bar').classList.add('hidden');render();};
+-function download(data:unknown,name:string){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+-$('export').onclick=async()=>{try{download(imported?report:await api(path()+'/export'),`${state?.runId??'experiment'}.json`);}catch(e){toast((e as Error).message);}};
+-$('import').onchange=async()=>{try{const file=$<HTMLInputElement>('import').files?.[0];if(!file)return;if(file.size>64*1024*1024)throw Error('报告大于 64 MiB');const data=JSON.parse(await file.text());if(data.schema!=='gs/lab-export/v1'||!data.state?.world||!Array.isArray(data.events))throw Error('请选择 gs/lab-export/v1 报告');streamAbort?.abort();connectGeneration++;imported=true;state=data.state;state!.readOnly=true;events=data.events.slice(-1000);cursor=state!.lastSeq;loadReplay(data);render();$('connection').textContent='本地报告 · 只读';}catch(e){toast((e as Error).message);}};
+-for(const id of ['takeover','step','start','pause','cancel','checkpoint','fork','edit','replay','export'])$<HTMLButtonElement>(id).disabled=true;
+-Object.defineProperty(window,'gsLabViewer',{value:{snapshot:()=>structuredClone(state),cursor:()=>cursor,readOnlyReplay:()=>replaying},writable:false});
+-async function boot(){try{const r=await fetch('/api/status');const b=await r.json();token=b.token;cap=await api('/api/lab/capabilities');for(const opt of $<HTMLSelectElement>('backend').options)if(opt.value!=='rule')opt.disabled=!cap.backends[opt.value]?.ready;await refreshRuns();const run=new URL(location.href).searchParams.get('run');if(run)await openRun(run);else{$('connection').textContent='本地服务已连接';$('connection-dot').classList.remove('off');}setInterval(()=>{void refreshRuns().catch(()=>{});},5000);}
+- catch(e){$('connection').textContent='未连接本地服务';$('connection-dot').classList.add('off');$('run-list').innerHTML='<p class="empty-note">请运行 npm start，然后打开<br>http://127.0.0.1:4173/lab</p>';$<HTMLButtonElement>('create').disabled=true;toast((e as Error).message);}}
++$('fork').onclick=async()=>{if(!state||imported||replaying||pending)return;hide('fork-error',true);const c=state.config,live=c.backend!=='rule'||c.generator==='llm';if(live&&!checked('fork-allow-live')){errorIn('fork-error','请为新分支重新授权真实请求，原授权不会自动继承。');return;}
++ try{$<HTMLButtonElement>('fork').disabled=true;const r=await api(path()+'/forks',{requestId:uid(),actor,checkpointId:val('checkpoint-list'),memory:checked('inherit')?'inherit':'none',config:{strategy:val('fork-strategy'),...(live?{allowLive:true,maxRequests:Number(val('fork-requests'))}:{})}});closeDialog('fork-dialog');await openRun(r.runId);toast('已创建新分支；原实验未改变。');}catch(error){errorIn('fork-error',error);}finally{render();}};
++$('intervene-open').onclick=()=>{closeDialog('more-dialog');hide('edit-error',true);openDialog('intervene-dialog');render();};
++$('edit-when').onchange=()=>{hide('after-field',val('edit-when')!=='scheduled');text('edit',val('edit-when')==='scheduled'?'登记未来干预':'记录并应用');render();};
++$('edit').onclick=async()=>{if(!state)return;const x=Number(val('point-x')),y=Number(val('point-y'));if(!Number.isInteger(x)||x<0||x>16||!Number.isInteger(y)||y<0||y>10){errorIn('edit-error','坐标必须在 X 0–16、Y 0–10 范围内。');return;}const scheduled=val('edit-when')==='scheduled';const extras={tool:val('tool') as NonNullable<Command['tool']>,point:{x,y},...(scheduled?{afterAction:Number(val('after-action'))}:{expectedWorldRevision:state.worldRevision})};const r=await cmd(scheduled?'schedule':'intervene',extras);if(r){closeDialog('intervene-dialog');toast('操作已记录，请以事件中的实际结果为准。');}};
++function loadReplay(data:unknown){const r=rec(data);if(r.schema!=='gs/lab-export/v1'||!isView(r.state)||!Array.isArray(r.events))throw Error('请选择完整的 gs/lab-export/v1 报告。');frames=replayStates(r);if(!frames.length)throw Error('报告中没有可回放的完整状态；不能把终局指标套用到初始世界。');report=r;replaying=true;frameIndex=0;decisionIndex=-1;$<HTMLInputElement>('replay-slider').max=String(frames.length-1);$<HTMLInputElement>('replay-slider').value='0';hide('replay-bar',false);setTab('overview',false);render();}
++$('replay').onclick=async()=>{try{if(replaying){$('replay-slider').focus();return;}const data=imported?report:await api(path()+'/export');loadReplay(data);}catch(error){toast(String(error));}};
++function moveReplay(i:number){frameIndex=Math.max(0,Math.min(frames.length-1,i));$<HTMLInputElement>('replay-slider').value=String(frameIndex);decisionIndex=-1;render();}
++$('replay-slider').oninput=()=>moveReplay(Number(val('replay-slider')));$('replay-prev').onclick=()=>moveReplay(frameIndex-1);$('replay-next').onclick=()=>moveReplay(frameIndex+1);
++$('live').onclick=()=>{if(imported)return;replaying=false;decisionIndex=-1;hide('replay-bar',true);render();};
++function download(data:unknown,name:string){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
++$('export').onclick=async()=>{try{download(imported?report:await api(path()+'/export'),`${state?.runId??'experiment'}.json`);closeDialog('more-dialog');}catch(error){toast(String(error));}};
++$('import-open').onclick=()=>$('import').click();
++$('import').onchange=async()=>{try{const file=$<HTMLInputElement>('import').files?.[0];if(!file)return;if(file.size>64*1024*1024)throw Error('报告超过 64 MiB，请先缩小报告。');const data=JSON.parse(await file.text());if(data.schema!=='gs/lab-export/v1'||!isView(data.state)||!Array.isArray(data.events)||data.events.length>40000)throw Error('报告结构不兼容或事件数量过大，未加载。');
++ const valid=data.events.every((e:any)=>Number.isSafeInteger(e.seq)&&e.runId===data.state.runId&&typeof e.type==='string');if(!valid)throw Error('报告事件身份或序号无效。');
++ const safeFrames=replayStates(data);if(!safeFrames.length)throw Error('报告没有完整状态快照。');generation++;streamAbort?.abort();imported=true;listing=false;state=structuredClone(data.state);state!.readOnly=true;events=data.events;cursor=state!.lastSeq;hide('list-page',true);hide('run-page',false);loadReplay(data);history.pushState(null,'','/lab#archive');setConnection(false,'离线报告 · 只读');
++ }catch(error){toast(String(error));}finally{$<HTMLInputElement>('import').value='';}};
++for(const id of ['help-open','cli-help','limits-open'])$(id).onclick=()=>openDialog('help-dialog');
++window.addEventListener('popstate',()=>{const query=new URL(location.href).searchParams,run=query.get('run');if(run){void openRun(run,false).then(()=>setTab(query.get('tab')??'overview',false)).catch(e=>toast(String(e)));}else showList(false);});
++Object.defineProperty(window,'gsLabViewer',{value:{snapshot:()=>structuredClone(state),cursor:()=>cursor,readOnlyReplay:()=>replaying,displayedSnapshot:()=>structuredClone(current()),view:()=>({tab,listing,imported,replaying,connected,frameIndex})},writable:false});
++async function boot(){try{const r=await fetch('/api/status'),b=await r.json();token=b.token;if(typeof token!=='string')throw Error('服务没有返回本地访问令牌');cap=await api('/api/lab/capabilities');setConnection(true,'本地服务已连接');await refreshRuns();const query=new URL(location.href).searchParams,run=query.get('run');if(run){await openRun(run,false);setTab(query.get('tab')??'overview',false);}setInterval(()=>void refreshRuns().catch(()=>{if(listing)setConnection(false,'未连接本地服务');}),5000);
++ }catch(error){setConnection(false,'未连接本地服务');html('run-list','<div class="empty-state"><span class="empty-symbol">◎</span><h2>连接你的实验服务</h2><p>请在完整项目中运行 npm start，再打开 http://127.0.0.1:4173/lab。<br>你也可以导入已导出的报告，只读查看完整过程。</p></div>');$<HTMLButtonElement>('new-run').disabled=true;toast(String(error));}}
+ void boot();
+diff --git a/src/main.ts b/src/main.ts
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,3 +1,4 @@
++import {mountWorkspaceNavigation} from './ui/workspace-navigation.js';
+ import {mountDecisionLab} from './ui/decision-lab.js';
+ import {ruleBackend} from './decision/pipeline.js';
+ import type {Strategy} from './decision/pipeline.js';
+@@ -36,7 +37,7 @@
+ </header>
+ <main class="shell">
+   <section class="intro">
+-    <div><div class="eyebrow">FAST JUDGMENTS → EXPLICIT DEPENDENCIES → MEASURED RESULTS · v0.4</div><h1>别让团子饿死<span style="color:#99ac7b">。</span></h1><p>先固定事实，再改变判断的组织方式。比较能力，也计算代价。</p></div>
++    <div><div class="eyebrow">完整任务体验 · 本地程序化基准</div><h1>别让团子饿死<span style="color:#99ac7b">。</span></h1><p>先固定事实，再改变判断的组织方式。比较能力，也计算代价。</p></div>
+     <div class="status-pill" id="mode-pill"><i class="status-dot"></i><span id="mode-label">离线规则演示 · 无需密钥</span></div>
+   </section>
+   <div class="workspace">
+@@ -129,7 +130,7 @@
+     </div>
+     <div class="journal-events" id="journal-events"></div>
+   </section>
+-  <footer class="footer"><span><strong>G/S ENGINE v0.4</strong> · TypeScript · 事件驱动 · 本地模拟世界</span><span class="shortcuts"><kbd>Space</kbd> 开始 / 暂停　<kbd>→</kbd> 单步　<kbd>R</kbd> 重置</span><span>五颗浆果之外，还有一种新的办法。</span></footer>
++  <footer class="footer"><span><strong>G/S LAB v0.4.3</strong> · TypeScript · 事件驱动 · 本地模拟世界</span><span class="shortcuts"><kbd>Space</kbd> 开始 / 暂停　<kbd>→</kbd> 单步　<kbd>R</kbd> 重置</span><span>五颗浆果之外，还有一种新的办法。</span></footer>
+ </main>
+ <div class="toast" id="toast" role="status" aria-live="polite"></div>
+ <dialog class="dialog" id="help-dialog"><div class="dialog-top"><h2>你不操纵团子。你改变它的处境。</h2><button class="btn icon-only ghost" data-close="help-dialog" aria-label="关闭">${icon('close')}</button></div>
+@@ -458,7 +459,7 @@
+ $<HTMLDialogElement>('replay-dialog').addEventListener('close',()=>{stopReplay();replayRenderer?.dispose();replayRenderer=null;});
+ document.querySelectorAll<HTMLDialogElement>('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}}));
+ window.addEventListener('keydown',e=>{
+-  if(document.querySelector('dialog[open]')||['INPUT','SELECT','TEXTAREA','BUTTON'].includes((e.target as HTMLElement).tagName))return;
++  if(document.body.dataset.localScope==='judgment'||document.querySelector('dialog[open]')||['INPUT','SELECT','TEXTAREA','BUTTON'].includes((e.target as HTMLElement).tagName))return;
+   if(e.code==='Space'){e.preventDefault();togglePlay();}else if(e.code==='ArrowRight'){e.preventDefault();if(!playing)void stepOnce();}else if(e.key.toLowerCase()==='r'){loadScenario(scenario);}
+ });
+ // Stable read-only hooks for browser smoke tests and local debugging, never exposing provider keys.
+@@ -476,5 +477,4 @@
+ Object.defineProperty(window,'gsDecisionLab',{value:decisionLab,writable:false});
+ loadScenario('guarded');void refreshBackend().then(()=>decisionLab.refresh());
+ 
+-const controlLink=document.createElement('a');controlLink.href='/lab';controlLink.textContent='Agent 控制与共享观测 ↗';controlLink.style.cssText='position:fixed;right:16px;bottom:12px;z-index:20;background:#304b38;color:#fff;padding:8px 12px;border-radius:10px;font-size:11px;text-decoration:none';
+-if(location.protocol==='http:'||location.protocol==='https:')document.body.append(controlLink);
++mountWorkspaceNavigation();
+diff --git a/src/ui/workspace-navigation.ts b/src/ui/workspace-navigation.ts
+--- /dev/null
++++ b/src/ui/workspace-navigation.ts
+@@ -0,0 +1,25 @@
++/** Separate the local game and judgment fixture visually; do not mutate either session. */
++export function mountWorkspaceNavigation(){
++ const shell=document.querySelector<HTMLElement>('main.shell')!,lab=document.getElementById('decision-lab')!;
++ const game=document.createElement('section');game.id='local-game';game.setAttribute('role','tabpanel');game.setAttribute('aria-labelledby','local-tab-game');
++ for(const child of [...shell.children])if(child!==lab)game.append(child);
++ lab.setAttribute('role','tabpanel');lab.setAttribute('aria-labelledby','local-tab-judgment');lab.hidden=true;
++ const nav=document.createElement('div');nav.className='local-scope-nav';nav.innerHTML=`<div><span class="local-kicker">本地试玩 · 浏览器独立世界</span><p>完整任务与判断实验分开查看，不与服务端会话混用。</p></div><div class="local-tabs" role="tablist" aria-label="本地实验范围"><button id="local-tab-game" role="tab" aria-selected="true" aria-controls="local-game" tabindex="0">完整任务体验</button><button id="local-tab-judgment" role="tab" aria-selected="false" aria-controls="decision-lab" tabindex="-1">判断组合实验</button></div>`;
++ shell.prepend(nav,game);document.body.dataset.localScope='game';
++ function select(which:string){const isGame=which==='game';game.hidden=!isGame;lab.hidden=isGame;document.body.dataset.localScope=which;
++ for(const [id,on]of [['local-tab-game',isGame],['local-tab-judgment',!isGame]] as const){const b=document.getElementById(id)!;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;}
++ }
++ for(const [id,scope]of [['local-tab-game','game'],['local-tab-judgment','judgment']]){const b=document.getElementById(id!)!;b.onclick=()=>select(scope!);b.onkeydown=e=>{if(['ArrowRight','ArrowLeft','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?'game':e.key==='End'?'judgment':document.body.dataset.localScope==='game'?'judgment':'game';select(next);document.getElementById('local-tab-'+next)?.focus();}};}
++ const controls=lab.querySelector('.lab-controls'),options=lab.querySelector('.lab-options');
++ const detail=document.createElement('details');detail.className='local-lab-advanced';detail.innerHTML='<summary>高级实验条件 · 延迟、截止与观察</summary><div class="local-lab-fields"></div>';
++ const fields=detail.querySelector('.local-lab-fields')!;for(const id of ['lab-delay','lab-deadline']){const label=document.getElementById(id)?.closest('label');if(label)fields.append(label);}if(options)fields.append(options);controls?.after(detail);
++ const selectMode=document.getElementById('run-mode') as HTMLSelectElement;
++ const groups=[['反应技能',['reactive','reactive-off','reactive-record','reactive-jev','reactive-live']],['明确的对照实现',['program','rules-full','program-jev','program-live']],['历史配置兼容',['adaptive','fixed','jev-template','live']]] as const;
++ for(const [name,values]of groups){const optgroup=document.createElement('optgroup');optgroup.label=name;for(const value of values){const opt=[...selectMode.options].find(o=>o.value===value);if(opt){opt.textContent=opt.textContent?.replace(/^v[\d.]+\s*/,'')??value;optgroup.append(opt);}}selectMode.append(optgroup);}
++ for(const opt of [...(document.getElementById('decision-style') as HTMLSelectElement).options])opt.textContent=opt.textContent?.replace(/^v[\d.]+\s*/,'')??opt.value;
++ const styleLabel=document.querySelector('label[for="decision-style"]');if(styleLabel)styleLabel.textContent='技能模式的判断组织';
++ const heading=document.querySelector('#connect-dialog h2');if(heading)heading.textContent='运行配置';
++ const btn=document.getElementById('btn-connect');if(btn){btn.title='运行配置';const txt=btn.querySelector('.btn-text');if(txt)txt.textContent='运行配置';}
++ const link=document.createElement('a');link.href='/lab';link.className='local-shared-link';link.textContent='打开共享实验观测台 ↗';
++ if(location.protocol==='http:'||location.protocol==='https:')nav.append(link);
++}
+diff --git a/tests/presentation043.test.mjs b/tests/presentation043.test.mjs
+--- /dev/null
++++ b/tests/presentation043.test.mjs
+@@ -0,0 +1,33 @@
++import test from 'node:test';import assert from 'node:assert/strict';
++import {ExperimentManager} from '../dist/src/lab/manager.js';
++import {actionsFor,statusCopy,reasonText,goalOf,titleOf,actualSource,flowOf,replayStates,keyEvents,decisionsFrom,isView,esc,duration} from '../dist/src/lab/presentation.js';
++const actor={id:'human:ui-test',kind:'human',label:'UI test'};
++async function fixture(t,config={}){const m=new ExperimentManager();t.after(()=>m.close());const c=await m.create({requestId:crypto.randomUUID(),actor,config});return m.get(c.runId);}
++const cmd=(r,action)=>r.command({commandId:crypto.randomUUID(),actor,expectedControlVersion:r.controlVersion,action});
++test('043 game title and goal ignore compatibility task=energy',async t=>{const r=await fixture(t,{kind:'game'}),v=r.view();assert.equal(titleOf(v.config),'守卫果园');assert(!goalOf(v).includes('35'));assert(goalOf(v).includes('5'));});
++test('043 judgment contracts keep reserve and energy distinctions',async t=>{const a=await fixture(t,{task:'energy'}),b=await fixture(t,{task:'reserve'});assert(goalOf(a.view()).includes('35'));assert(goalOf(b.view()).includes('2'));});
++test('043 owner sees start and step at ready boundary',async t=>{const r=await fixture(t),a=actionsFor(r.view(),actor.id);assert.deepEqual(a.visible,['start','step']);assert(a.enabled.step);});
++test('043 nonowner only sees explicit takeover',async t=>{const r=await fixture(t),a=actionsFor(r.view(),'agent:other');assert.deepEqual(a.visible,['takeover']);assert(!a.enabled.step);assert(a.enabled.takeover);});
++test('043 active step cannot be duplicated from UI',async t=>{const r=await fixture(t),v=r.view();v.busy=true;v.status='stepping';const a=actionsFor(v,actor.id);assert(!a.enabled.step);assert(a.enabled.pause);});
++test('043 blocked differs from ordinary paused',async t=>{const r=await fixture(t),v=r.view();v.status='blocked';v.reason='decision_blocked:no_local_suitable_action';assert(!actionsFor(v,actor.id).enabled.start);assert.deepEqual(actionsFor(v,actor.id).visible,[]);assert(statusCopy(v).body.includes('不能作为普通暂停继续'));v.status='paused';assert(actionsFor(v,actor.id).enabled.start);});
++for(const status of ['succeeded','failed','blocked','cancelled','stopped','fault'])test('043 terminal '+status+' never exposes resume',async t=>{const v=(await fixture(t)).view();v.status=status;const a=actionsFor(v,actor.id);assert(!a.enabled.start);assert(!a.enabled.cancel);assert(!a.enabled.takeover);});
++for(const flag of ['replay','imported','pending'])test('043 '+flag+' disables all server mutation controls',async t=>{const v=(await fixture(t)).view();const a=actionsFor(v,actor.id,{[flag]:true});assert(Object.values(a.enabled).every(x=>!x));});
++test('043 disconnected observer cannot command a stale state',async t=>{const v=(await fixture(t)).view();assert(Object.values(actionsFor(v,actor.id,{connected:false}).enabled).every(x=>!x));});
++test('043 model configured but not called is not presented as measured',async t=>{const v=(await fixture(t)).view();v.config.backend='jev';assert(actualSource(v).includes('尚无'));});
++test('043 test provider remains labeled even with jev config',async t=>{const v=(await fixture(t)).view();v.config.backend='jev';v.lastDecision={source:'test-provider',externalRequests:0};assert(actualSource(v).includes('测试替身'));});
++test('043 real external request count not S interface count',async t=>{const v=(await fixture(t)).view();v.requests=50;assert(actualSource(v).includes('无真实'));v.externalRequests=2;assert(actualSource(v).startsWith('2 次'));});
++test('043 exact known reason mapped without hiding raw value',()=>{assert.equal(reasonText('decision_blocked:no_local_suitable_action'),'子层未选出适用动作');assert.equal(reasonText('repair_budget_exhausted'),'技能修复预算已耗尽');assert.equal(reasonText(null),'');});
++test('043 unknown cause is not fabricated as budget failure',()=>assert(!reasonText('new_unrecognized_error').includes('预算')));
++test('043 task context uses registered immediate objective not object stringify',async t=>{const v=(await fixture(t,{kind:'game'})).view();v.activeSkill={spec:{title:'技能',phases:[{rule:'place-resource'}]},phase:0};v.lastDecision={packet:{taskContext:{immediateObjective:{description:'到达站位之前先接近。'}}}};assert.equal(flowOf(v).immediate,'到达站位之前先接近。');});
++test('043 literal strings safely escaped',()=>assert.equal(esc('<img onerror="oops">'), '&lt;img onerror=&quot;oops&quot;&gt;'));
++test('043 duration supports null-free readable units',()=>{assert.equal(duration(50),'50 ms');assert.equal(duration(1532),'1.5 秒');assert.equal(duration(65000),'1 分 5 秒');assert.equal(duration(NaN),'—');});
++test('043 replay stores full snapshots, not final metrics on initial map',async t=>{const r=await fixture(t);await cmd(r,'step');await cmd(r,'step');const frames=replayStates(r.export());assert.equal(frames[0].world.energy,10);assert.equal(frames[0].requests,0);assert.equal(frames[0].status,'ready');assert.equal(frames.at(-1).world.energy,40);assert.equal(frames.at(-1).status,'succeeded');assert(frames.at(-1).requests>0);});
++test('043 historical skill and candidate state kept together',async t=>{const r=await fixture(t);await cmd(r,'step');const frames=replayStates(r.export());assert.equal(frames[0].lastDecision,null);assert(frames.at(-1).lastDecision);});
++test('043 no state snapshots fall back only to labelled final state',async t=>{const r=await fixture(t);const frames=replayStates({initial:{energy:999},state:r.view(),events:[]});assert.equal(frames.length,1);assert.equal(frames[0].world.energy,10);});
++test('043 invalid replay does not invent states',()=>assert.equal(replayStates({state:{},events:[]}).length,0));
++test('043 UI projection and replay never mutate engine evidence',async t=>{const r=await fixture(t);await cmd(r,'step');const report=r.export(),before=JSON.stringify(report);const frames=replayStates(report);frames[0].world.energy=0;keyEvents(report.events);statusCopy(report.state);decisionsFrom(report.events,report.state);assert.equal(JSON.stringify(report),before);});
++test('043 timeline does not leak later evidence into replay',async t=>{const r=await fixture(t);await cmd(r,'step');await cmd(r,'step');const old=replayStates(r.export())[0];const keys=keyEvents(r.events,old.lastSeq);assert(!keys.some(e=>e.title==='任务完成'));});
++test('043 repeated forwarded skill event aggregated but preserved as raw evidence',()=>{const d={runId:'child',localSucceeded:true,outcome:{steps:2}};const e={runId:'r',seq:1,at:'now',type:'engine',data:{event:{type:'skill_summary',data:d}}};const es=[e,{...e,seq:2,data:{event:{type:'parent_event',data:{event:{type:'skill_summary',data:d}}}}}];assert.equal(keyEvents(es).length,1);assert.equal(es.length,2);});
++test('043 actual judgment fixture choice read from recorded selector answer',async t=>{const r=await fixture(t);await cmd(r,'step');const ds=decisionsFrom(r.events,r.view());assert.equal(ds.at(-1).status,'selected');assert(ds.at(-1).choice);assert.equal(ds.at(-1).externalRequests,0);});
++test('043 no success claim created by reading presentation functions',async t=>{const r=await fixture(t);for(let i=0;i<15;i++){statusCopy(r.view());flowOf(r.view());actionsFor(r.view(),actor.id);keyEvents(r.events);}assert.equal(r.view().requests,0);assert.equal(r.view().status,'ready');});
++test('043 state reader accepts only expected hosted shape',async t=>{const v=(await fixture(t)).view();assert(isView(v));assert(!isView({world:{}}));v.world.width=999;assert(!isView(v));});

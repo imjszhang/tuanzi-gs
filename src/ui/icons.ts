@@ -1,0 +1,26 @@
+const shapes:Record<string,string>={
+  leaf:'<path d="M20 4c-8-2-16 3-14 9s11 8 14-9Z"/><path d="M4 21 16 9"/>',
+  play:'<path d="m9 5 11 7-11 7Z"/>',pause:'<path d="M8 5v14M16 5v14"/>',
+  step:'<path d="m6 5 10 7-10 7ZM19 5v14"/>',reset:'<path d="M3 11a9 9 0 1 1 2 7M3 4v7h7"/>',
+  cursor:'<path d="m5 3 14 10-7 1-4 7Z"/>',berry:'<path d="M12 8c-5-5-11 3-7 8s10 6 14 0-2-13-7-8Z"/><path d="M12 9V4m0 1c3-3 5-2 6-1-2 2-4 3-6 2Z"/>',
+  wall:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 12h18M9 5v7m6 0v7"/>',
+  guard:'<path d="m4 9 1-6 6 4h2l6-4 1 6v7l-8 5-8-5Z"/><path d="M8 12h1m6 0h1m-6 5h4"/>',
+  erase:'<path d="m4 13 9-9 8 8-8 8H8l-4-4Z"/><path d="m9 8 8 8M13 20h8"/>',
+  save:'<path d="M4 4h13l3 3v13H4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/>',
+  rewind:'<path d="m11 5-8 7 8 7Zm10 0-8 7 8 7Z"/>',
+  download:'<path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/>',
+  compare:'<path d="M5 5h5v14H5Zm9 4h5v10h-5ZM3 22h18"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 4 3c-1 0-1 1-1 2m0 3h.01"/>',
+  settings:'<path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3"/><circle cx="16" cy="17" r="3"/>',
+  close:'<path d="m6 6 12 12M6 18 18 6"/>',check:'<path d="m5 12 4 4L19 6"/>',
+  bolt:'<path d="m14 2-9 12h7l-2 8 9-12h-7Z"/>',
+  bag:'<path d="M6 7h12l2 14H4ZM9 7V5a3 3 0 0 1 6 0v2"/>',
+  home:'<path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"/>',
+  arrow:'<path d="M4 12h16m-6-6 6 6-6 6"/>',
+  circle:'<circle cx="12" cy="12" r="8"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+  code:'<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-16-2 20"/>',
+  eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  spark:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/>',
+};
+export const icon=(name:string,cls='')=>`<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[name]??shapes.circle}</svg>`;
+export const escape=(v:unknown):string=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
