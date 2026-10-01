@@ -69,8 +69,14 @@ export function createHosted(config, initial, notify, ledger, signal, providers,
                     row.status = active.aborted ? 'aborted' : 'failed';
                     row.error = String(e).slice(0, 600);
                     Object.assign(row, transportInfo(e));
-                    if (e && typeof e === 'object' && 'usage' in e)
-                        row.usage = e.usage;
+                    if (e && typeof e === 'object') {
+                        if ('usage' in e)
+                            row.usage = e.usage;
+                        if ('transport' in e)
+                            row.transport = structuredClone(e.transport);
+                        if ('validation' in e)
+                            row.validation = structuredClone(e.validation);
+                    }
                     throw e;
                 }
                 finally {
