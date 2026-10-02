@@ -3,6 +3,7 @@ import http from 'node:http';import fs from 'node:fs';import path from 'node:pat
 import {ExperimentManager,LabRun} from '../dist/src/lab/manager.js';import {parseConfig} from '../dist/src/lab/types.js';import {createWorld} from '../dist/src/game/world.js';import {createLabHandler} from '../server/lab/http.mjs';import {judgmentRequest} from '../server/judgment.mjs';
 import {proposal,program} from '../tests/fixtures/adaptive-v05.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),port=Number(process.env.PORT??4199),token='MOCK_RETRY_055_TOKEN',calls=[],gates=new Map();let charged=0;
+const productVersion=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
 const upstream=http.createServer(async(req,res)=>{let text='';for await(const b of req)text+=b;const input=JSON.parse(text);calls.push(input);if(calls.length===1){res.writeHead(503,{'retry-after':'4'});res.end('MOCK temporary failure');return;}
  if(calls.length===2){let release;const p=new Promise(r=>release=r);gates.set('response',release);res.on('close',release);await p;gates.delete('response');if(res.destroyed)return;}
  const answers={};for(const [id,q] of Object.entries(input.questions)){let choice=Object.keys(q.criteria??{}).find(k=>q.criteria[k]?.value?.action?.kind==='wait')??'none';answers[id]=q.type==='choice'?{type:'choice',choice,confidence:1,probabilities:Object.fromEntries(Object.keys(q.criteria).map(k=>[k,k===choice?1:0]))}:q.type==='noul'?{type:'noul',noul:1}:{type:'score',score:1};}
@@ -12,7 +13,7 @@ const providers={ready:()=>true,backend:()=>({id:'jev:MOCK_HTTP_055',kind:'jev',
 const manager=new ExperimentManager(providers),actor={id:'agent:mcp',kind:'agent',label:'MOCK · HTTP重试与MCP观察'},run=new LabRun(parseConfig({kind:'game',controller:'adaptive',backend:'jev',generator:'llm',allowLive:true,maxRequests:12,jevMaxRetries:2,jevAttemptTimeoutMs:15000,deadlineMs:90000,strategy:'direct'}),actor,providers,createWorld('guarded'));manager.runs.set(run.runId,run);
 const handler=createLabHandler({manager,token,baseUrl:`http://127.0.0.1:${port}`,archiveDir:process.env.GS_LAB_OUTPUT_DIR??'/tmp/gs-retry-055'});
 const server=http.createServer(async(req,res)=>{
- if(req.url==='/api/status'){res.end(JSON.stringify({token,jevReady:true,llmReady:true,fixture:true,version:'0.5.5'}));return;}
+ if(req.url==='/api/status'){res.end(JSON.stringify({token,jevReady:true,llmReady:true,fixture:true,version:productVersion}));return;}
  if(req.url==='/fixture-ids'){res.end(JSON.stringify({visible:run.runId,calls:calls.length,charged,source:'MOCK_HTTP_503_ONLY'}));return;}
  if(req.url==='/fixture-release'){gates.get('response')?.();res.end('{"released":true}');return;}
  if(await handler(req,res,new URL(req.url,'http://localhost')))return;

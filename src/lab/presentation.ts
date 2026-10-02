@@ -28,9 +28,22 @@ export function actualSource(s:LabView){
  if(s.config.backend!=='rule'||s.config.generator==='llm')return '已配置模型 · 尚无真实外部请求';
  return s.config.kind==='game'&&s.config.controller==='adaptive'?'离线动作轮换 / 上下文扩展夹具 · 非求解器':'程序化运行 · 无真实外部请求';
 }
-export function sourceLabel(source:unknown){return ({'authored-rule':'程序规则',rule:'程序规则',mock:'测试替身','test-provider':'测试替身','deterministic-single':'单候选确定性路径','deterministic-continue':'继续调度当前技能',jev:'Jev 判断','configured-model':'配置的模型','configured-provider':'配置的模型'} as Record<string,string>)[String(source)]??String(source??'来源未报告');}
+export function sourceLabel(source:unknown){return ({'authored-rule':'程序规则',rule:'程序规则',mock:'测试替身','test-provider':'测试替身','deterministic-single':'单候选确定性路径','deterministic-continue':'继续调度当前技能',jev:'Jev 判断','configured-model':'配置的模型','configured-provider':'配置的模型','environment-referee':'独立环境裁判 · 仅观察者可见'} as Record<string,string>)[String(source)]??String(source??'来源未报告');}
+const DEADLOCK_REASONS:Record<string,string>={
+ insufficient_total_resources:'剩余可交付资源总量不足以达到根目标。',
+ home_disconnected:'当前地形已将团子与小窝隔断，无法完成剩余交付。',
+ stationary_resource_lock:'背包为空、场上无诱饵，静止守卫下没有安全可达的浆果；后续无法获得交付资源。',
+ pending_interventions:'尚有计划中的环境干预，暂不据当前局面判定死局。',
+ already_terminal:'原有世界验收已到终局，保留其结果。',
+ no_static_proof:'当前充分条件未能证明死局。'
+};
+export function refereeCopy(assessment:unknown):{title:string;body:string;tone:string}|null{
+ const r=rec(assessment);if(r.schema!=='gs/deadlock-referee/v1'||r.observerOnly!==true||!['proven-deadlock','not-proven'].includes(r.verdict))return null;
+ const proven=r.verdict==='proven-deadlock';return {title:proven?'独立裁判已证实死局':'独立裁判尚未证实死局',body:`${DEADLOCK_REASONS[String(r.reason)]??'具体判据见裁判原始证据。'}${proven?'':'未证实不代表局面可解。'}仅观察者可见，不提供给 G/S。`,tone:proven?'warning':'neutral'};
+}
 export function reasonText(reason:string|null){
  if(!reason)return '';
+ if(reason.startsWith('deadlock_proven:'))return '已证实死局，根任务失败';
  const known: [string,string][]=[
  ['decision_blocked:no_local_suitable_action','子层未选出适用动作'],['decision_blocked:parent_no_suitable_skill','父层未选出适用技能'],
  ['duplicate_repair_no_new_evidence','已停止重复修复：没有新的行为结构或证据'],['repair_budget_exhausted','技能修复预算已耗尽'],
@@ -41,6 +54,7 @@ export function reasonText(reason:string|null){
  return known.find(([prefix])=>reason.includes(prefix))?.[1]??'运行已到达需要检查的边界';
 }
 export function statusCopy(s:LabView):{title:string;body:string;tone:string}{
+ const referee=refereeCopy(s.referee);if(s.status==='failed'&&s.reason?.startsWith('deadlock_proven:')&&s.referee?.verdict==='proven-deadlock'&&referee)return {title:'已证实死局，根任务失败',body:`${referee.body}已执行 ${s.physicalActions} 个物理动作，剩余能量 ${s.world.energy}。`,tone:'warning'};
  const diagnostic=rec(s.diagnostics);if(s.config.kind==='game'&&s.config.controller==='adaptive'&&!terminal(s.status)&&s.busy)return {title:diagnostic.phase==='initializing'?'G 正在了解初始环境':diagnostic.phase==='format-repairing'?'G 正在修正输出格式（不是策略重试）':diagnostic.phase==='investigating'?'正在处理只读子问题':diagnostic.phase==='adapting'?'G 正在调整 S 的判断条件':'S 正在进行局部判断',body:`当前层级 ${diagnostic.depth??0}；G 已调用 ${diagnostic.gCalls??0} 次。参考解不进入运行上下文。`,tone:'active'};
  const blocked=terminal(s.status)&&s.status!=='succeeded';
  if(s.status==='succeeded')return {title:'根任务已完成',body:`验收器确认本局成功。实际执行 ${s.physicalActions} 个物理动作，剩余能量 ${s.world.energy}。${s.interventions.length?'本局有环境干预，比较时需保留该条件。':'局部技能结果可在判断过程中逐项查证。'}`,tone:'success'};
@@ -106,6 +120,7 @@ export function keyEvents(events:LabEvent[],through=Infinity):KeyEvent[]{
   else if(t==='transition'&&rec(d.candidate).action?.kind!=='callSkill'&&rec(rec(d.candidate).action).kind){title='执行一个物理动作';detail=String(rec(d.candidate).description??rec(rec(d.candidate).action).kind);}
   else if(t==='intervention'){title=rec(d.result).ok?'环境干预已应用':'环境干预未生效';detail=`${d.tool??''} · ${rec(d.result).message??''}`;tone='warning';}
   else if(t==='intervention_scheduled'){title='已登记受控干预';detail='实际执行结果另行记录。';}
+  else if(e.type==='deadlock_referee'&&rec(d.assessment).verdict==='proven-deadlock'){const summary=refereeCopy(d.assessment);if(summary){title=summary.title;detail=summary.body;tone=summary.tone;}}
   else if(t==='checkpoint_created'){title='已保存检查点';detail=String(d.label??d.id??'');}
   else if(t==='proposal_rejected'){title='提案未通过验证';detail=String(rec(d.feedback).reason??rec(d.rejection).reason??d.reason??'展开原始记录查看具体原因');tone='warning';}
   else if(t==='run_ended'){title=STATUS[String(d.status)]??'本次实验结束';detail=reasonText(d.reason??null)||'根验收结果已记录。';tone=d.status==='succeeded'?'success':'warning';}

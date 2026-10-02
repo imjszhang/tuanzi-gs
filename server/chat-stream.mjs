@@ -17,7 +17,7 @@ export function redactingSink(secrets,emit){let pending='';const keys=[...new Se
  finish(){if(pending)emit('[REDACTED_PARTIAL]');pending='';}
 };}
 export function abortable(promise,signal,onLate){signal.throwIfAborted();return new Promise((resolve,reject)=>{let settled=false;const abort=()=>{if(settled)return;settled=true;reject(signal.reason??Error('cancelled'));};signal.addEventListener('abort',abort,{once:true});Promise.resolve(promise).then(v=>{if(settled){onLate?.(v);return;}settled=true;signal.removeEventListener('abort',abort);resolve(v);},e=>{if(settled)return;settled=true;signal.removeEventListener('abort',abort);reject(e);});});}
-export async function readCompletion(response,{signal,onText=()=>{},onMode=()=>{},fallbackModel='',maxBytes=4*1024*1024,maxContent=60000,maxReasoning=120000}={}){
+export async function readCompletion(response,{signal,onText=()=>{},onMode=()=>{},fallbackModel='',maxBytes=4*1024*1024,maxEventBytes=4*1024*1024,maxContent=60000,maxReasoning=120000}={}){
  signal.throwIfAborted();const streaming=(response.headers.get('content-type')??'').toLowerCase().includes('text/event-stream');
  const mode=streaming?'sse':'buffered';onMode(mode);let content='',reasoning='',model=fallbackModel,usage,finishReason=null,done=false,seenChoice=false,unsupported=false,refusal=false,bytes=0;
  const append=(channel,v)=>{const text=exposedText(v);if(!text)return;if(channel==='content'){if(content.length+text.length>maxContent)throw failure('G content exceeds limit');content+=text;}else {if(reasoning.length+text.length>maxReasoning)throw failure('G reasoning exceeds limit');reasoning+=text;}onText(channel,text);};
@@ -39,13 +39,32 @@ export async function readCompletion(response,{signal,onText=()=>{},onMode=()=>{
  };
  let reader=response.body?.getReader();if(!reader)throw failure('G response body missing');
  const cancel=()=>{void reader.cancel().catch(()=>{});};signal.addEventListener('abort',cancel,{once:true});
- const decoder=new TextDecoder('utf-8',{fatal:true});let buffer='',dataLines=[],eventName='';
- const dispatch=()=>{if(!dataLines.length){eventName='';return;}const raw=dataLines.join('\n');dataLines=[];if(eventName==='error')throw failure('G provider SSE error');eventName='';if(raw.trim()==='[DONE]'){done=true;return;}let obj;try{obj=JSON.parse(raw);}catch{throw failure('Malformed G SSE JSON');}chunk(obj);};
- const line=l=>{if(l===''){dispatch();return;}if(l[0]===':')return;const p=l.indexOf(':'),field=p<0?l:l.slice(0,p),value=p<0?'':l.slice(p+1).replace(/^ /,'');if(field==='data')dataLines.push(value);if(field==='event')eventName=value;};
- const consume=()=>{while(!done){let n=buffer.search(/[\r\n]/);if(n<0)return;if(buffer[n]==='\r'&&n===buffer.length-1)return;const l=buffer.slice(0,n);const width=buffer[n]==='\r'&&buffer[n+1]==='\n'?2:1;buffer=buffer.slice(n+width);line(l);}};
+ const decoder=new TextDecoder('utf-8',{fatal:true});let buffer='',pendingLine='',lineBytes=0,eventData='',eventBytes=0,hasData=false,eventName='',skipLF=false;
+ const size=text=>Buffer.byteLength(text,'utf8');
+ const dispatch=()=>{if(!hasData){eventName='';return;}const raw=eventData;eventData='';eventBytes=0;hasData=false;if(eventName==='error')throw failure('G provider SSE error');eventName='';if(raw.trim()==='[DONE]'){done=true;return;}let obj;try{obj=JSON.parse(raw);}catch{throw failure('Malformed G SSE JSON');}chunk(obj);};
+ const line=l=>{
+  if(l===''){dispatch();return;}if(l[0]===':')return;
+  const p=l.indexOf(':'),field=p<0?l:l.slice(0,p),value=p<0?'':l.slice(p+1).replace(/^ /,'');
+  if(field==='data'){eventBytes+=size(value)+(hasData?1:0);if(eventBytes>maxEventBytes)throw failure('G SSE event too large');eventData+=(hasData?'\n':'')+value;hasData=true;}
+  if(field==='event')eventName=value;
+ };
+ const appendLine=text=>{lineBytes+=size(text);if(lineBytes>maxEventBytes)throw failure('G SSE line too large');pendingLine+=text;};
+ // Bound only the unfinished line/event, not the lifetime traffic or a TCP chunk.
+ // Scan each decoded fragment once, including CRLF split across reads.
+ const consume=text=>{
+  let at=0;if(skipLF&&text.length){if(text[0]==='\n')at++;skipLF=false;}
+  const newline=/[\r\n]/g;
+  while(!done&&at<text.length){newline.lastIndex=at;const next=newline.exec(text);if(!next){appendLine(text.slice(at));return;}
+   appendLine(text.slice(at,next.index));const complete=pendingLine;pendingLine='';lineBytes=0;line(complete);at=next.index+1;
+   if(next[0]==='\r'){if(at===text.length)skipLF=true;else if(text[at]==='\n')at++;}
+  }
+ };
  try{
-  while(!done){const r=await abortable(reader.read(),signal);signal.throwIfAborted();if(r.done)break;bytes+=r.value.byteLength;if(bytes>maxBytes)throw failure('G response too large');buffer+=decoder.decode(r.value,{stream:true});if(streaming)consume();}
-  if(streaming){buffer+=decoder.decode();consume();if(!done)throw failure('G stream interrupted before [DONE]');if(!seenChoice||finishReason===null)throw failure('G stream missing completion marker');}
+  while(!done){const r=await abortable(reader.read(),signal);signal.throwIfAborted();if(r.done)break;bytes+=r.value.byteLength;
+   if(!streaming&&bytes>maxBytes)throw failure('G response too large');
+   const decoded=decoder.decode(r.value,{stream:true});if(streaming)consume(decoded);else buffer+=decoded;
+  }
+  if(streaming){consume(decoder.decode());if(!done)throw failure('G stream interrupted before [DONE]');if(!seenChoice||finishReason===null)throw failure('G stream missing completion marker');}
   else {buffer+=decoder.decode();let data;try{data=JSON.parse(buffer);}catch{throw failure('G envelope not JSON');}chunk(data);done=true;}
   signal.throwIfAborted();if(unsupported)throw failure('G tool calls are not executable');if(refusal)throw failure('G provider refused generation');
   if(finishReason!==null&&finishReason!=='stop')throw failure(`G incomplete output: ${finishReason}`);

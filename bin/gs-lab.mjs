@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 const argv=process.argv.slice(2),words=[],flags={};let parseError=null;const booleans=new Set(['json','human','mask-resources','allow-live','wait','follow']);
 for(let i=0;i<argv.length;i++){const a=argv[i];if(!a.startsWith('--')){words.push(a);continue;}const [key,inline]=a.slice(2).split(/=(.*)/s);if(Object.hasOwn(flags,key))parseError='duplicate flag '+key;flags[key]=inline??(booleans.has(key)?(argv[i+1]==='true'||argv[i+1]==='false'?argv[++i]:true):(argv[i+1]&&!argv[i+1].startsWith('--')?argv[++i]:true));}
 const command=words[0]??'help',runId=words[1];
-const allowed=new Set(['url','json','actor','label','human','request-id','command-id','if-version','if-world','kind','task','scenario','controller','strategy','backend','generator','experience','seed','mask-resources','delay-ms','allow-live','max-requests','max-questions','max-actions','max-steps','max-search-nodes','deadline-ms','max-g-calls','max-depth','max-revisions','max-format-repairs','jev-max-retries','jev-retry-base-ms','jev-retry-max-ms','jev-attempt-timeout-ms','config','wait','timeout','after','limit','follow','out','checkpoint','memory','tool','x','y','after-action']);
+const allowed=new Set(['url','json','actor','label','human','request-id','command-id','if-version','if-world','kind','task','scenario','controller','strategy','backend','generator','experience','seed','mask-resources','delay-ms','allow-live','max-requests','max-questions','max-actions','max-steps','max-search-nodes','deadline-ms','max-g-calls','g-timeout-ms','max-depth','max-revisions','max-format-repairs','jev-max-retries','jev-retry-base-ms','jev-retry-max-ms','jev-attempt-timeout-ms','config','wait','timeout','after','limit','follow','out','checkpoint','memory','tool','x','y','after-action']);
 const die=(code,message,status)=>{throw Object.assign(Error(message),{code,status});};
 const output=value=>console.log(JSON.stringify(value,null,flags.json===false?0:2));
 const bool=k=>flags[k]===true||flags[k]==='true';
@@ -21,8 +21,8 @@ async function request(endpoint,{method='GET',body,stream=false}={}){
 async function init(){if(base.protocol!=='http:'||!['localhost','127.0.0.1','[::1]'].includes(base.hostname)||base.username||base.password)die('LOCAL_ONLY','Use http://127.0.0.1:PORT; SSH-forward for another machine');
  if(!token){const r=await fetch(new URL('/api/status',base),{signal:AbortSignal.timeout(5000)});if(!r.ok)die('BOOTSTRAP_FAILED',`HTTP ${r.status}`);token=(await r.json()).token;}if(!token)die('NO_TOKEN','No local control token');}
 function config(){let c=flags.config?JSON.parse(fs.readFileSync(String(flags.config),'utf8')):{};if(!c||typeof c!=='object'||Array.isArray(c))die('INVALID_CONFIG','Config must be an object');
- const names={kind:'kind',task:'task',scenario:'scenario',controller:'controller',strategy:'strategy',backend:'backend',generator:'generator',experience:'experience',seed:'orderSeed','delay-ms':'delayMs','max-requests':'maxRequests','max-questions':'maxQuestions','max-actions':'maxActions','max-steps':'maxSteps','max-search-nodes':'maxSearchNodes','deadline-ms':'deadlineMs','max-g-calls':'maxGCalls','max-depth':'maxDepth','max-revisions':'maxRevisions','max-format-repairs':'maxFormatRepairs','jev-max-retries':'jevMaxRetries','jev-retry-base-ms':'jevRetryBaseMs','jev-retry-max-ms':'jevRetryMaxMs','jev-attempt-timeout-ms':'jevAttemptTimeoutMs'};
- for(const [flag,field]of Object.entries(names))if(flags[flag]!==undefined)c[field]=['seed','delay-ms','max-requests','max-questions','max-actions','max-steps','max-search-nodes','deadline-ms','max-g-calls','max-depth','max-revisions','max-format-repairs','jev-max-retries','jev-retry-base-ms','jev-retry-max-ms','jev-attempt-timeout-ms'].includes(flag)?number(flag):String(flags[flag]);
+ const names={kind:'kind',task:'task',scenario:'scenario',controller:'controller',strategy:'strategy',backend:'backend',generator:'generator',experience:'experience',seed:'orderSeed','delay-ms':'delayMs','max-requests':'maxRequests','max-questions':'maxQuestions','max-actions':'maxActions','max-steps':'maxSteps','max-search-nodes':'maxSearchNodes','deadline-ms':'deadlineMs','max-g-calls':'maxGCalls','g-timeout-ms':'gTimeoutMs','max-depth':'maxDepth','max-revisions':'maxRevisions','max-format-repairs':'maxFormatRepairs','jev-max-retries':'jevMaxRetries','jev-retry-base-ms':'jevRetryBaseMs','jev-retry-max-ms':'jevRetryMaxMs','jev-attempt-timeout-ms':'jevAttemptTimeoutMs'};
+ for(const [flag,field]of Object.entries(names))if(flags[flag]!==undefined)c[field]=['seed','delay-ms','max-requests','max-questions','max-actions','max-steps','max-search-nodes','deadline-ms','max-g-calls','g-timeout-ms','max-depth','max-revisions','max-format-repairs','jev-max-retries','jev-retry-base-ms','jev-retry-max-ms','jev-attempt-timeout-ms'].includes(flag)?number(flag):String(flags[flag]);
  if(flags['allow-live']!==undefined)c.allowLive=bool('allow-live');if(flags['mask-resources']!==undefined)c.maskResources=bool('mask-resources');return c;}
 const actor=()=>({id:String(flags.actor??process.env.GS_LAB_ACTOR??'agent:cli'),kind:bool('human')?'human':'agent',label:String(flags.label??process.env.GS_LAB_ACTOR??'CLI experiment operator')});
 const root=id=>`/api/lab/runs/${encodeURIComponent(id)}`;
@@ -32,7 +32,7 @@ async function events(id){const after=number('after',0);if(!bool('follow'))retur
  const quit=()=>{void reader.cancel();};process.once('SIGINT',quit);
  try{for(;;){const {done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});let i;while((i=buffer.indexOf('\n\n'))>=0){const block=buffer.slice(0,i);buffer=buffer.slice(i+2);const data=block.split('\n').filter(x=>x.startsWith('data: ')).map(x=>x.slice(6)).join('\n');if(!data)continue;const e=JSON.parse(data);console.log(JSON.stringify(e));if(e.type==='state'&&['succeeded','failed','blocked','cancelled','stopped','fault'].includes(e.data.status)){await reader.cancel();return;}}}}
  finally{process.off('SIGINT',quit);}}
-function help(){console.log(`G/S Lab v0.5.4 — shared experiment client (Node >=22)
+function help(){console.log(`G/S Lab v0.5.6 — shared experiment client (Node >=22)
 
 Start service: npm start                 Viewer: http://127.0.0.1:4173/lab
 Commands:
@@ -40,7 +40,7 @@ Commands:
   create [--kind judgment|game] [--task energy] [--scenario guarded]
          [--strategy direct|batch|serial|dependent] [--backend rule|jev|llm]
          [--controller adaptive|hierarchy|program|rules] [--config config.json]
-         [--max-g-calls 12] [--max-depth 2] [--max-revisions 3] [--max-format-repairs 2] [--jev-max-retries 2] [--jev-attempt-timeout-ms 8000]
+         [--max-g-calls 12] [--g-timeout-ms 600000] [--max-depth 2] [--max-revisions 3] [--max-format-repairs 2] [--jev-max-retries 2] [--jev-attempt-timeout-ms 8000]
   status RUN | result RUN | wait RUN
   start RUN [--wait] | step RUN | pause RUN | cancel RUN | takeover RUN
   checkpoint RUN [--label name]

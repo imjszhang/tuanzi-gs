@@ -1,15 +1,15 @@
-G/S Lab v0.5.5
+G/S Lab v0.5.6
 
-Node.js 22+。解压到新目录，迁移自己的.env，不覆盖原工作树。
-进入tuanzi-gs后运行 npm start，再打开 http://127.0.0.1:4173/lab。
-已包含编译文件，不必先npm install。
+Node.js 22+。运行 npm start，再打开 http://127.0.0.1:4173/lab。
+已包含编译文件，不必先 npm install；迁移前保留自己的 .env 和实验归档。
 
-本版：Jev瞬时访问错误有界重试；本地stdio MCP读取项目、查看和主持同一场实验。
-默认首次失败后额外重试2次；none不属于网络失败，不重试答案。
-MCP客户端直接启动 node /绝对路径/tuanzi-gs/bin/gs-lab-mcp.mjs。
-默认只读，--allow-control开放控制，--allow-live才可请求已授权的真实模型。
---profile audit可读参考源码和历史报告，但始终只读，不能回填答案。
+本版新增独立死局裁判：只在能证明根任务无法完成时结束自主实验。
+判定与证明只提供给观察者，不进入团子的 G/S 输入、反馈、候选或记忆。
+未证实死局不代表可完成；未来计划干预可能改变局面时暂缓判定。
+保留 Jev 有界重试、本地 stdio MCP 与同层 G/S 调整。
+G 总调用配置上限为 256，默认仍为 12；所有请求继续统一计账。
 
-先读 docs/RELEASE-v0.5.5.md、docs/MCP-v0.5.5.md、docs/RETRY-v0.5.5.md。
-MCP配置示例在examples/mcp。外部Agent也应先读AGENTS.md。
-默认本地是协议夹具，不是通关模型；制作时未调用真实Jev/LLM。
+先读 docs/RELEASE-v0.5.6.md、docs/DEADLOCK-REFEREE.md。
+外部 Agent 读 AGENTS.md 与 docs/AGENT-v0.5.6.md。
+MCP 和重试配置继续见 docs/MCP-v0.5.5.md、docs/RETRY-v0.5.5.md。
+本版验证使用离线/测试替身，未重新运行真实模型实验。

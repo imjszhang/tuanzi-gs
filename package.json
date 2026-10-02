@@ -1,9 +1,9 @@
 {
   "name": "tuanzi-gs-lab",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "private": true,
   "type": "module",
-  "description": "\u522b\u8ba9\u56e2\u5b50\u997f\u6b7b \u2014 a transparent, playable domain adapter for the G/S TypeScript runtime",
+  "description": "别让团子饿死 — a transparent, playable domain adapter for the G/S TypeScript runtime",
   "engines": {
     "node": ">=22"
   },
@@ -13,7 +13,7 @@
     "test": "node --test --test-concurrency=2 --test-timeout=120000 tests/*.test.mjs vendor/gs-engine-ts/tests/*.test.mjs",
     "check": "npm run build && npm test",
     "bench": "node scripts/benchmark.mjs",
-    "test:browser": "python scripts/browser-v055.py",
+    "test:browser": "python scripts/browser-v056.py",
     "bench:v03": "node scripts/benchmark-v03.mjs",
     "bench:models": "node scripts/benchmark-models.mjs",
     "test:browser:legacy": "python scripts/browser-legacy-on-v03.py",
@@ -56,7 +56,9 @@
     "test:retry": "node --test tests/retry055*.test.mjs",
     "test:mcp": "node --test tests/mcp055*.test.mjs",
     "test:browser:v055": "python scripts/browser-v055.py",
-    "demo:retry": "node scripts/serve-retry-fixture-v055.mjs"
+    "demo:retry": "node scripts/serve-retry-fixture-v055.mjs",
+    "test:deadlock": "node --test tests/deadlock*.test.mjs",
+    "test:browser:v056": "python scripts/browser-v056.py"
   },
   "devDependencies": {
     "typescript": "5.8.3"

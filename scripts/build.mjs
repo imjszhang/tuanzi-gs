@@ -36,6 +36,6 @@ console.log(`Built ${modules.size} modules. Offline play.html: ${Math.round(Buff
 modules.clear();
 const labEntry=visit(path.join(dist,'src/lab/viewer.js'));
 const labRegistry=[...modules].map(([id,{output,deps}])=>`${JSON.stringify(id)}:{deps:${JSON.stringify(deps)},factory:function(module,exports,require){\n${output}\n}}`).join(',\n');
-const labBundle=`/* G/S v0.5.5 shared-run observer. */\n(()=>{'use strict';const modules={${labRegistry}};const cache=Object.create(null);function load(id){if(cache[id])return cache[id].exports;const d=modules[id],m={exports:{}};cache[id]=m;d.factory(m,m.exports,n=>load(d.deps[n]));return m.exports;}load(${JSON.stringify(labEntry)});})();\n`;
+const labBundle=`/* G/S v0.5.6 shared-run observer. */\n(()=>{'use strict';const modules={${labRegistry}};const cache=Object.create(null);function load(id){if(cache[id])return cache[id].exports;const d=modules[id],m={exports:{}};cache[id]=m;d.factory(m,m.exports,n=>load(d.deps[n]));return m.exports;}load(${JSON.stringify(labEntry)});})();\n`;
 fs.writeFileSync(path.join(root,'public/lab.js'),labBundle);
 console.log(`Built observer: ${modules.size} modules; browser owns no GSEngine.`);

@@ -100,6 +100,7 @@ export declare class AdaptiveGS {
         maxGenerations: number;
         maxFormatRepairs: number;
         ioTimeoutMs: number;
+        gTimeoutMs: number;
     };
     private busy;
     readonly accounting: {

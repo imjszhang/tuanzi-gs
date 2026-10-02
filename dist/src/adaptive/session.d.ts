@@ -45,6 +45,7 @@ export type AdaptiveOptions = {
     maxActions?: number;
     maxSteps?: number;
     maxGCalls?: number;
+    gTimeoutMs?: number;
     maxDepth?: number;
     maxRevisions?: number;
     maxFormatRepairs?: number;
@@ -175,6 +176,7 @@ export declare class AutonomousSession {
             };
             latestValidation: unknown;
             budgets: {
+                gTimeoutMs: number;
                 gUsed: number;
                 gLimit: number;
                 depthLimit: number;
@@ -231,6 +233,7 @@ export declare class AutonomousSession {
         };
         latestValidation: unknown;
         budgets: {
+            gTimeoutMs: number;
             gUsed: number;
             gLimit: number;
             depthLimit: number;
@@ -337,6 +340,7 @@ export declare class AutonomousSession {
             };
             latestValidation: unknown;
             budgets: {
+                gTimeoutMs: number;
                 gUsed: number;
                 gLimit: number;
                 depthLimit: number;

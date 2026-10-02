@@ -3,6 +3,7 @@ import type { GameState, EditTool, Point } from '../game/types.js';
 import type { Strategy } from '../decision/pipeline.js';
 import type { TaskId } from '../decision/experiment.js';
 import type { ExperienceMode } from '../skills/experience.js';
+import type { DeadlockAssessment } from './deadlock.js';
 export type Actor = {
     id: string;
     kind: 'agent' | 'human';
@@ -35,6 +36,7 @@ export type LabConfig = {
     deadlineMs: number;
     interventions: Intervention[];
     maxGCalls: number;
+    gTimeoutMs: number;
     maxDepth: number;
     maxRevisions: number;
     maxFormatRepairs: number;
@@ -52,7 +54,7 @@ export type LabEvent = {
 };
 export type LabView = {
     schema: 'gs/lab-state/v1';
-    version: '0.5.5' | '0.5.4' | '0.5.3' | '0.5.2' | '0.5.1' | '0.5.0' | '0.4.2';
+    version: '0.5.6' | '0.5.5' | '0.5.4' | '0.5.3' | '0.5.2' | '0.5.1' | '0.5.0' | '0.4.2';
     runId: string;
     viewerPath: string;
     config: LabConfig;
@@ -82,6 +84,7 @@ export type LabView = {
     interventions: unknown[];
     lineage: unknown;
     readOnly: boolean;
+    referee?: DeadlockAssessment;
     transportRetry?: import('./retry.js').RetryState | null;
 };
 export type Command = {

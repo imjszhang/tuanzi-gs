@@ -27,7 +27,7 @@ export function parseIntervention(raw) { const r = obj(raw); keys(r, ['afterActi
     return fail('INVALID_TOOL'); return { afterAction: int(r.afterAction, 0, 180, 'afterAction'), tool: r.tool, point: { x: int(p.x, 0, 16, 'x'), y: int(p.y, 0, 10, 'y') } }; }
 export function parseConfig(raw) {
     const r = obj(raw);
-    const defaults = { kind: 'judgment', task: 'energy', scenario: 'guarded', controller: 'hierarchy', strategy: 'batch', backend: 'rule', generator: 'local', experience: 'use', orderSeed: 441, maskResources: false, delayMs: 0, allowLive: false, maxRequests: 512, maxQuestions: 8192, maxActions: 180, maxSteps: 400, maxSearchNodes: 150000, deadlineMs: 120000, interventions: [], maxGCalls: 12, maxDepth: 2, maxRevisions: 3, maxFormatRepairs: 2, jevMaxRetries: 2, jevRetryBaseMs: 500, jevRetryMaxMs: 5000, jevAttemptTimeoutMs: 8000 };
+    const defaults = { kind: 'judgment', task: 'energy', scenario: 'guarded', controller: 'hierarchy', strategy: 'batch', backend: 'rule', generator: 'local', experience: 'use', orderSeed: 441, maskResources: false, delayMs: 0, allowLive: false, maxRequests: 512, maxQuestions: 8192, maxActions: 180, maxSteps: 400, maxSearchNodes: 150000, deadlineMs: 120000, interventions: [], maxGCalls: 12, gTimeoutMs: 600000, maxDepth: 2, maxRevisions: 3, maxFormatRepairs: 2, jevMaxRetries: 2, jevRetryBaseMs: 500, jevRetryMaxMs: 5000, jevAttemptTimeoutMs: 8000 };
     keys(r, Object.keys(defaults));
     const c = { ...defaults, ...r };
     if (r.kind === 'game' && r.controller === undefined)
@@ -35,7 +35,7 @@ export function parseConfig(raw) {
     for (const [k, options] of Object.entries({ kind: ['judgment', 'game'], task: ['fast', 'reserve', 'energy', 'chain'], scenario: ['meadow', 'detour', 'guarded', 'remix'], controller: ['adaptive', 'hierarchy', 'program', 'rules'], strategy: ['direct', 'batch', 'serial', 'dependent'], backend: ['rule', 'jev', 'llm'], generator: ['local', 'llm'], experience: ['off', 'record', 'use'] }))
         if (!options.includes(String(c[k])))
             fail('INVALID_ENUM', k);
-    for (const [k, min, max] of [['orderSeed', 0, 2147483647], ['delayMs', 0, 1000], ['maxRequests', 1, 512], ['maxQuestions', 1, 8192], ['maxActions', 1, 180], ['maxSteps', 1, 1000], ['maxSearchNodes', 1, 500000], ['deadlineMs', 1, 3600000], ['maxGCalls', 1, 32], ['maxDepth', 0, 3], ['maxRevisions', 1, 6], ['maxFormatRepairs', 0, 4]])
+    for (const [k, min, max] of [['orderSeed', 0, 2147483647], ['delayMs', 0, 1000], ['maxRequests', 1, 512], ['maxQuestions', 1, 8192], ['maxActions', 1, 180], ['maxSteps', 1, 1000], ['maxSearchNodes', 1, 500000], ['deadlineMs', 1, 3600000], ['maxGCalls', 1, 256], ['gTimeoutMs', 100, 3600000], ['maxDepth', 0, 3], ['maxRevisions', 1, 6], ['maxFormatRepairs', 0, 4]])
         c[k] = int(c[k], min, max, k);
     for (const [k, min, max] of [['jevMaxRetries', 0, 5], ['jevRetryBaseMs', 0, 10000], ['jevRetryMaxMs', 0, 30000], ['jevAttemptTimeoutMs', 100, 25000]])
         c[k] = int(c[k], min, max, k);

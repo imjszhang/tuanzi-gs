@@ -30,13 +30,13 @@ export class AdaptiveStale extends Error {override name='AdaptiveStale';}
 function canonical(x:unknown):string { if(x===undefined)return 'null'; if(x===null||typeof x!=='object')return JSON.stringify(x);if(Array.isArray(x))return `[${x.map(canonical).join(',')}]`;return `{${Object.keys(x).sort().map(k=>`${JSON.stringify(k)}:${canonical((x as Record<string,unknown>)[k])}`).join(',')}}`;}
 export function frameSignature(f:AdaptiveFrame):string{return canonical({kind:f.kind,question:f.question,context:f.context,options:f.options.map(o=>({id:o.id,description:o.description,value:o.value}))});}
 export class AdaptiveGS {
-  readonly limits:{maxDepth:number;maxRevisions:number;maxGenerations:number;maxFormatRepairs:number;ioTimeoutMs:number};
+  readonly limits:{maxDepth:number;maxRevisions:number;maxGenerations:number;maxFormatRepairs:number;ioTimeoutMs:number;gTimeoutMs:number};
   private busy=false;
   readonly accounting={generations:0,formatRepairs:0,invalidOutputs:0,validBatches:0,revisionAttempts:0,committed:0};
   private account(){this.ports.event({type:'adaptation_accounting',data:{...this.accounting,maxFormatRepairs:this.limits.maxFormatRepairs,maxRevisions:this.limits.maxRevisions,scope:'this-resolver; root call/time budget remains shared'}});}
   constructor(private readonly ports:AdaptivePorts,limits:Partial<AdaptiveGS['limits']>={}){
-    this.limits={maxDepth:2,maxRevisions:3,maxGenerations:8,maxFormatRepairs:2,ioTimeoutMs:120000,...limits};
-    for(const [k,v]of Object.entries(this.limits))if(!Number.isSafeInteger(v)||v<(['maxFormatRepairs','maxDepth'].includes(k)?0:1)||v>(k==='ioTimeoutMs'?3600000:32))throw Error(`Invalid adaptive limit ${k}`);
+    this.limits={maxDepth:2,maxRevisions:3,maxGenerations:8,maxFormatRepairs:2,ioTimeoutMs:120000,gTimeoutMs:limits.ioTimeoutMs??120000,...limits};
+    for(const [k,v]of Object.entries(this.limits))if(!Number.isSafeInteger(v)||v<(['maxFormatRepairs','maxDepth'].includes(k)?0:1)||v>((k==='ioTimeoutMs'||k==='gTimeoutMs')?3600000:32))throw Error(`Invalid adaptive limit ${k}`);
   }
   async resolve(frame:AdaptiveFrame,signal:AbortSignal,initialCause?:string):Promise<AdaptiveResolution>{
     if(this.busy)throw Error('adaptive_concurrent_resolve');this.busy=true;
@@ -44,10 +44,10 @@ export class AdaptiveGS {
     try{return await this.loop(structuredClone(frame),0,signal,budget,initialCause);}
     finally{this.busy=false;}
   }
-  private async io<T>(revision:string,signal:AbortSignal,fn:(s:AbortSignal)=>Promise<T>):Promise<T>{
+  private async io<T>(revision:string,signal:AbortSignal,fn:(s:AbortSignal)=>Promise<T>,timeoutMs=this.limits.ioTimeoutMs):Promise<T>{
     this.ports.check(revision,signal);const local=new AbortController();const combined=AbortSignal.any([signal,local.signal]);
     let timer:ReturnType<typeof setTimeout>|undefined;let abort:()=>void=()=>{};
-    const stopped=new Promise<never>((_,reject)=>{abort=()=>reject(combined.reason??Error('aborted'));combined.addEventListener('abort',abort,{once:true});timer=setTimeout(()=>local.abort(Error('adaptive_io_timeout')),this.limits.ioTimeoutMs);});
+    const stopped=new Promise<never>((_,reject)=>{abort=()=>reject(combined.reason??Error('aborted'));combined.addEventListener('abort',abort,{once:true});timer=setTimeout(()=>local.abort(Error('adaptive_io_timeout')),timeoutMs);});
     try{const result=await Promise.race([Promise.resolve().then(()=>fn(combined)),stopped]);this.ports.check(revision,combined);return result;}
     finally{if(timer)clearTimeout(timer);combined.removeEventListener('abort',abort);}
   }
@@ -81,7 +81,7 @@ export class AdaptiveGS {
       if(new TextEncoder().encode(JSON.stringify(request)).byteLength>220000)return {kind:'blocked',reason:'adaptation_input_budget_exhausted',frame,evidence:evidence()};
       budget.generated++;this.accounting.generations++;this.account();this.ports.event({type:'g_requested',data:request});
       let patches:AdaptivePatch[]=[];let raw:unknown;let invalid:InvalidAdaptation|undefined;
-      try{raw=await this.io(frame.revision,signal,s=>this.ports.generate(request,s));this.ports.event({type:'g_proposed',data:{depth,output:raw}});patches=this.ports.parse(raw,frame);}
+      try{raw=await this.io(frame.revision,signal,s=>this.ports.generate(request,s),this.limits.gTimeoutMs);this.ports.event({type:'g_proposed',data:{depth,output:raw}});patches=this.ports.parse(raw,frame);}
       catch(e){if(!(e instanceof InvalidAdaptation))throw e;invalid=e;}
       // Syntax/shape errors are not strategy revisions. Repair the last output, not the world.
       const initialMarker=raw&&typeof raw==='object'?(raw as any).invalidProposal:null;
@@ -101,7 +101,7 @@ export class AdaptiveGS {
         repairs++;budget.generated++;this.accounting.generations++;this.accounting.formatRepairs++;this.account();
         this.ports.event({type:'g_requested',data:repair});
         invalid=undefined;
-        try{raw=await this.io(frame.revision,signal,s=>this.ports.repairOutput!(repair,s));this.ports.event({type:'g_proposed',data:{depth,mode:'output-repair',output:raw}});patches=this.ports.parse(raw,frame);}
+        try{raw=await this.io(frame.revision,signal,s=>this.ports.repairOutput!(repair,s),this.limits.gTimeoutMs);this.ports.event({type:'g_proposed',data:{depth,mode:'output-repair',output:raw}});patches=this.ports.parse(raw,frame);}
         catch(e){if(!(e instanceof InvalidAdaptation))throw e;invalid=e;}
       }
 

@@ -1,6 +1,7 @@
 import { GameWorld } from '../game/world.js';
 import type { GameState } from '../game/types.js';
 import type { ProviderFactory, MemorySeed, RequestLedger } from './session.js';
+import type { DeadlockAssessment } from './deadlock.js';
 import type { LabConfig, Actor, LabView, LabEvent, RunStatus, CommandResult, Intervention } from './types.js';
 export type Checkpoint = {
     id: string;
@@ -37,6 +38,7 @@ export declare class LabRun {
     private seed;
     private script;
     private editLog;
+    private referee;
     owner: Actor;
     controlVersion: number;
     status: RunStatus;
@@ -50,6 +52,8 @@ export declare class LabRun {
     constructor(config: LabConfig, owner: Actor, providers?: ProviderFactory | undefined, initial?: GameState, seed?: MemorySeed, lineage?: unknown);
     get terminal(): boolean;
     get world(): GameWorld;
+    private get usesReferee();
+    private get refereeFailed();
     private emit;
     subscribe(fn: (e: LabEvent) => void): () => boolean;
     private onEngine;
@@ -60,6 +64,8 @@ export declare class LabRun {
     private requestStop;
     private end;
     private applyScheduled;
+    /** Host-only terminal evidence. Never sent to the controller, its feedback or memory. */
+    private checkDeadlock;
     private enqueue;
     private quantum;
     command(raw: unknown): Promise<CommandResult>;
@@ -82,11 +88,13 @@ export declare class LabRun {
         ledger: RequestLedger;
         trace: {} | null;
         evaluation: {
+            note: string;
+            deadlockPolicy?: string;
+            referee?: DeadlockAssessment | null;
             live: string;
             hasInterventions: boolean;
             interactiveControl: boolean;
             deadlineIncludesOperatorPauses: boolean;
-            note: string;
         };
     };
     shutdown(): void;
@@ -127,6 +135,7 @@ export declare class ExperimentManager {
             maxSearchNodes: number;
             deadlineMs: number;
             maxGCalls: number;
+            gTimeoutMs: number;
             maxDepth: number;
             maxRevisions: number;
             maxFormatRepairs: number;
@@ -136,6 +145,14 @@ export declare class ExperimentManager {
             jevAttemptTimeoutMs: number;
         };
         defaults: LabConfig;
+        deadlockReferee: {
+            policy: string;
+            scope: string;
+            observerOnly: boolean;
+            modelFeedback: boolean;
+            complete: boolean;
+            event: string;
+        };
         informationPolicy: {
             adaptive: string;
             referenceControllers: string[];

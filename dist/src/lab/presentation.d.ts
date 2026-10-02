@@ -18,6 +18,11 @@ export declare const goalOf: (s: LabView) => string;
 export declare function duration(ms: number): string;
 export declare function actualSource(s: LabView): string;
 export declare function sourceLabel(source: unknown): string;
+export declare function refereeCopy(assessment: unknown): {
+    title: string;
+    body: string;
+    tone: string;
+} | null;
 export declare function reasonText(reason: string | null): string;
 export declare function statusCopy(s: LabView): {
     title: string;

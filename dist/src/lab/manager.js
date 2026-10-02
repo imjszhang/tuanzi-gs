@@ -4,6 +4,7 @@
 import { createFixture, TASKS } from '../decision/experiment.js';
 import { createWorld, GameWorld } from '../game/world.js';
 import { createHosted } from './session.js';
+import { assessDeadlock, DEADLOCK_POLICY } from './deadlock.js';
 import { TERMINAL, LabError, fail, parseConfig, parseActor, parseCommand, identifier, stable } from './types.js';
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}-${crypto.randomUUID()}`;
@@ -50,6 +51,7 @@ export class LabRun {
     seed;
     script = [];
     editLog = [];
+    referee;
     owner;
     controlVersion = 0;
     status = 'ready';
@@ -71,11 +73,13 @@ export class LabRun {
         this.preWorld = new GameWorld(this.initial);
         this.script = config.interventions.map(spec => ({ spec: structuredClone(spec), origin: 'config', applied: false }));
         this.checkpoints.set('initial', { id: 'initial', label: 'Initial state', at: this.createdAt, world: structuredClone(this.initial), memory: structuredClone(seed), sourceRunId: this.runId, sourceSeq: 0, decisionSteps: 0, note: 'A fork is a NEW trial with fresh controller phases and budgets, not continuation.' });
-        this.emit('run_created', { config: this.config, owner: this.owner, lineage });
+        this.emit('run_created', { config: this.config, owner: this.owner, lineage, ...(this.usesReferee ? { deadlockPolicy: DEADLOCK_POLICY, observerOnly: true } : {}) });
         this.publish();
     }
     get terminal() { return TERMINAL.has(this.status); }
     get world() { return this.holder?.world ?? this.preWorld; }
+    get usesReferee() { return this.config.kind === 'game' && this.config.controller === 'adaptive'; }
+    get refereeFailed() { return this.referee?.verdict === 'proven-deadlock'; }
     emit(type, data) {
         if (this.events.length >= 30000 && !['state', 'run_ended', 'event_limit'].includes(type)) {
             this.eventBudget = true;
@@ -92,7 +96,7 @@ export class LabRun {
     subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
     onEngine = (e) => { this.emit('engine', { sourceRunId: e.runId, event: e }); if ((e.type === 's_retry' || this.config.controller === 'adaptive' && (['initialization_started', 'initialization_ready', 'initialization_failed', 'initialization_skipped', 'initialization_invalidated', 's_requested', 'g_requested', 'adaptation_accounting', 'adaptation_rejected', 'proposal_warnings', 'adaptation_committed', 'meta_enter', 'meta_return', 'subproblem_enter', 'subproblem_return', 'same_layer_resumed'].includes(e.type) || (e.type === 'g_stream' && e.data.kind === 'status' && ['queued', 'complete', 'invalid', 'aborted', 'failed', 'unavailable'].includes(e.data.status)))) && this.holder)
         this.publish(); };
-    view() { const world = this.world.snapshot(), detail = this.holder?.inspect() ?? { lastDecision: null, activeSkill: null, lastSkillResult: null }; return structuredClone({ schema: 'gs/lab-state/v1', version: '0.5.5', runId: this.runId, viewerPath: `/lab?run=${this.runId}`, config: this.config, status: this.status, reason: this.reason, owner: this.owner, controlVersion: this.controlVersion, lastSeq: this.seq, busy: this.busy, createdAt: this.createdAt, startedAt: this.startedAt, endedAt: this.endedAt, elapsedMs: this.startedAt ? (this.endedAt ? Date.parse(this.endedAt) - Date.parse(this.startedAt) : Date.now() - Date.parse(this.startedAt)) : 0, engineWorkMs: this.engineWorkMs, world, worldRevision: String(world.revision), physicalActions: world.turn - this.initial.turn, decisionSteps: this.decisionSteps, requests: this.ledger.requests, externalRequests: this.ledger.externalRequests, questions: this.ledger.questions, ...detail, outcome: this.holder?.lastResult ?? null, interventions: this.editLog, lineage: this.lineage, readOnly: false }); }
+    view() { const world = this.world.snapshot(), detail = this.holder?.inspect() ?? { lastDecision: null, activeSkill: null, lastSkillResult: null }; return structuredClone({ schema: 'gs/lab-state/v1', version: '0.5.6', runId: this.runId, viewerPath: `/lab?run=${this.runId}`, config: this.config, status: this.status, reason: this.reason, owner: this.owner, controlVersion: this.controlVersion, lastSeq: this.seq, busy: this.busy, createdAt: this.createdAt, startedAt: this.startedAt, endedAt: this.endedAt, elapsedMs: this.startedAt ? (this.endedAt ? Date.parse(this.endedAt) - Date.parse(this.startedAt) : Date.now() - Date.parse(this.startedAt)) : 0, engineWorkMs: this.engineWorkMs, world, worldRevision: String(world.revision), physicalActions: world.turn - this.initial.turn, decisionSteps: this.decisionSteps, requests: this.ledger.requests, externalRequests: this.ledger.externalRequests, questions: this.ledger.questions, ...detail, ...(this.referee ? { referee: this.referee } : {}), ...(this.refereeFailed ? { activeSkill: null } : {}), outcome: this.refereeFailed ? { kind: 'done', outcome: 'failed', reason: `deadlock_proven:${this.referee.reason}`, source: 'environment-referee' } : this.holder?.lastResult ?? null, interventions: this.editLog, lineage: this.lineage, readOnly: false }); }
     publish() { const state = this.view(); state.lastSeq = this.seq + 1; this.emit('state', state); }
     clearTimer() { if (this.timer !== undefined)
         clearTimeout(this.timer); this.timer = undefined; }
@@ -125,6 +129,16 @@ export class LabRun {
         this.editLog.push(entry);
         this.emit('intervention', entry);
     } }
+    /** Host-only terminal evidence. Never sent to the controller, its feedback or memory. */
+    checkDeadlock() {
+        if (!this.usesReferee || this.pendingStop || this.holder?.finished)
+            return;
+        const next = assessDeadlock(this.world.snapshot(), { pendingInterventions: this.script.some(item => !item.applied) });
+        const changed = stable(next) !== stable(this.referee ?? null);
+        this.referee = next;
+        if (changed)
+            this.emit('deadlock_referee', { assessment: next });
+    }
     enqueue() { if (!this.desired || this.terminal || this.timer !== undefined || this.busy)
         return; this.timer = setTimeout(() => { this.timer = undefined; void this.quantum().catch(e => this.end('fault', String(e))); }, 0); }
     async quantum() {
@@ -138,6 +152,9 @@ export class LabRun {
         this.publish();
         const at = performance.now();
         try {
+            this.checkDeadlock();
+            if (this.refereeFailed)
+                return;
             if (this.decisionSteps >= this.config.maxSteps || this.world.snapshot().turn - this.initial.turn >= this.config.maxActions) {
                 this.holder.cancel();
                 this.pendingStop = { status: 'stopped', reason: 'host_step_or_action_budget' };
@@ -145,8 +162,10 @@ export class LabRun {
             }
             this.decisionSteps++;
             await this.holder.step();
-            if (!this.holder.finished && !this.pendingStop)
+            if (!this.holder.finished && !this.pendingStop) {
                 this.applyScheduled();
+                this.checkDeadlock();
+            }
         }
         catch (e) {
             this.pendingStop ??= { status: 'fault', reason: String(e).slice(0, 600) };
@@ -156,6 +175,8 @@ export class LabRun {
             this.busy = false;
             if (this.pendingStop)
                 this.end(this.pendingStop.status, this.pendingStop.reason);
+            else if (this.refereeFailed)
+                this.end('failed', `deadlock_proven:${this.referee.reason}`);
             else if (this.holder.finished) {
                 const result = this.holder.lastResult;
                 this.end(result.kind === 'done' ? result.outcome : result.kind === 'paused' ? 'blocked' : result.kind === 'fault' ? 'fault' : 'stopped', 'reason' in result ? result.reason : null);
@@ -228,6 +249,7 @@ export class LabRun {
                 }
                 case 'intervene': {
                     const r = this.holder ? this.holder.edit(c.tool, c.point) : this.preWorld.edit(c.tool, c.point);
+                    this.referee = undefined;
                     const entry = { origin: 'interactive', actor: c.actor, afterAction: this.world.snapshot().turn - this.initial.turn, tool: c.tool, point: c.point, result: r, at: now() };
                     this.editLog.push(entry);
                     this.emit('intervention', entry);
@@ -235,6 +257,7 @@ export class LabRun {
                 }
                 case 'schedule':
                     this.script.push({ spec: { afterAction: c.afterAction, tool: c.tool, point: c.point }, origin: 'scheduled-after-create', applied: false });
+                    this.referee = undefined;
                     this.emit('intervention_scheduled', { actor: c.actor, afterAction: c.afterAction, tool: c.tool, point: c.point });
                     break;
                 case 'checkpoint': {
@@ -252,7 +275,7 @@ export class LabRun {
     }
     getCheckpoint(checkpointId) { const cp = this.checkpoints.get(checkpointId); if (!cp)
         return fail('CHECKPOINT_NOT_FOUND', 'Unknown checkpoint', 404); return structuredClone(cp); }
-    export() { return { schema: 'gs/lab-export/v1', version: '0.5.5', state: this.view(), initial: structuredClone(this.initial), config: structuredClone(this.config), lineage: structuredClone(this.lineage), controls: this.events.filter(e => e.type === 'command' || e.type === 'control_transferred'), events: structuredClone(this.events), checkpoints: [...this.checkpoints.values()].map(c => structuredClone(c)), script: structuredClone(this.script), ledger: structuredClone(this.ledger), trace: this.holder?.export() ?? null, evaluation: { live: this.config.backend !== 'rule' || this.config.generator === 'llm' ? 'REQUESTED' : 'NOT_RUN', hasInterventions: this.editLog.length > 0, interactiveControl: this.events.some(e => e.type === 'control_transferred') || this.editLog.some((x) => x.origin !== 'config'), deadlineIncludesOperatorPauses: true, note: 'Host clocks include pauses after first step. UI replay speed never delays execution. External Agent controls experiments, not action choices.' } }; }
+    export() { return { schema: 'gs/lab-export/v1', version: '0.5.6', state: this.view(), initial: structuredClone(this.initial), config: structuredClone(this.config), lineage: structuredClone(this.lineage), controls: this.events.filter(e => e.type === 'command' || e.type === 'control_transferred'), events: structuredClone(this.events), checkpoints: [...this.checkpoints.values()].map(c => structuredClone(c)), script: structuredClone(this.script), ledger: structuredClone(this.ledger), trace: this.holder?.export() ?? null, evaluation: { live: this.config.backend !== 'rule' || this.config.generator === 'llm' ? 'REQUESTED' : 'NOT_RUN', hasInterventions: this.editLog.length > 0, interactiveControl: this.events.some(e => e.type === 'control_transferred') || this.editLog.some((x) => x.origin !== 'config'), deadlineIncludesOperatorPauses: true, ...(this.usesReferee ? { deadlockPolicy: DEADLOCK_POLICY, referee: structuredClone(this.referee ?? null) } : {}), note: 'Host clocks include pauses after first step. UI replay speed never delays execution. External Agent controls experiments, not action choices. Host referee verdicts do not modify raw controller results or self-memory.' } }; }
     shutdown() { if (!this.terminal)
         this.requestStop('cancelled', 'service_shutdown'); }
 }
@@ -266,7 +289,7 @@ export class ExperimentManager {
         this.providers = providers;
         this.maxRuns = maxRuns;
     }
-    capabilities() { return { schema: 'gs/lab-capabilities/v1', version: '0.5.5', kinds: ['judgment', 'game'], tasks: TASKS, scenarios: ['meadow', 'detour', 'guarded', 'remix'], controllers: ['adaptive', 'hierarchy', 'program', 'rules'], strategies: ['direct', 'batch', 'serial', 'dependent'], backends: { rule: { ready: true }, jev: { ready: this.providers?.ready('jev') ?? false }, llm: { ready: this.providers?.ready('llm') ?? false } }, commands: ['start', 'step', 'pause', 'cancel', 'takeover', 'intervene', 'schedule', 'checkpoint'], limits: { maxRuns: this.maxRuns, maxRequests: 512, maxQuestions: 8192, maxActions: 180, maxSteps: 1000, maxSearchNodes: 500000, deadlineMs: 3600000, maxGCalls: 32, maxDepth: 3, maxRevisions: 6, maxFormatRepairs: 4, jevMaxRetries: 5, jevRetryBaseMs: 10000, jevRetryMaxMs: 30000, jevAttemptTimeoutMs: 25000 }, defaults: parseConfig({ kind: 'game' }), informationPolicy: { adaptive: 'no-reference/v05', referenceControllers: ['hierarchy', 'program', 'rules'], referenceMode: 'offline-only; may contain authored tactics', allowSolverFeedback: false, allowOptimizedBinding: false, allowLegacyMemory: false }, transportRetry: { provider: 'jev', extraAttempts: 2, semanticNoneRetried: false, perAttemptLedger: true, worldActionsRetried: false, event: 's_retry' }, generationStream: { event: 'g_stream', schema: 'gs/g-stream/v1', channels: ['reasoning', 'content'], previewOnly: true, partialExecution: false, history: 'shared event sequence; replay by prefix' }, semantics: { depth: 'v054: maxDepth limits explicit child nesting (0 disables children), not same-layer G updates; local child exhaustion returns evidence to its parent', candidateScope: 'null IDs: dynamic legal kinds; explicit IDs: persistent stage or revision-bound snapshot; never silent widening', initialization: 'adaptive new runs: G reviews the permitted starting environment before action-level S; create/read/reconnect make no calls; forks reinitialize; costs share root budgets', pause: 'between decision quanta; not a rollback', cancel: 'cooperative; unknown outcomes are not retried', fork: 'new trial, never transparent continuation', clock: 'wall clock starts at first step; includes operator pause', recovery: 'v05 autonomous: S abstention or measured stagnation invokes G; G reframes context/options; same-layer provisional installation; explicit read-only child problems return to parent under shared budgets; equivalent decision interfaces rejected', auth: 'one trusted local-user token; actor IDs are provenance/coordination, not separate security principals', persistence: 'live state in process; completed exports may be archived by host; no active crash recovery' } }; }
+    capabilities() { return { schema: 'gs/lab-capabilities/v1', version: '0.5.6', kinds: ['judgment', 'game'], tasks: TASKS, scenarios: ['meadow', 'detour', 'guarded', 'remix'], controllers: ['adaptive', 'hierarchy', 'program', 'rules'], strategies: ['direct', 'batch', 'serial', 'dependent'], backends: { rule: { ready: true }, jev: { ready: this.providers?.ready('jev') ?? false }, llm: { ready: this.providers?.ready('llm') ?? false } }, commands: ['start', 'step', 'pause', 'cancel', 'takeover', 'intervene', 'schedule', 'checkpoint'], limits: { maxRuns: this.maxRuns, maxRequests: 512, maxQuestions: 8192, maxActions: 180, maxSteps: 1000, maxSearchNodes: 500000, deadlineMs: 3600000, maxGCalls: 256, gTimeoutMs: 3600000, maxDepth: 3, maxRevisions: 6, maxFormatRepairs: 4, jevMaxRetries: 5, jevRetryBaseMs: 10000, jevRetryMaxMs: 30000, jevAttemptTimeoutMs: 25000 }, defaults: parseConfig({ kind: 'game' }), deadlockReferee: { policy: DEADLOCK_POLICY, scope: 'game/adaptive host boundaries', observerOnly: true, modelFeedback: false, complete: false, event: 'deadlock_referee' }, informationPolicy: { adaptive: 'no-reference/v05', referenceControllers: ['hierarchy', 'program', 'rules'], referenceMode: 'offline-only; may contain authored tactics', allowSolverFeedback: false, allowOptimizedBinding: false, allowLegacyMemory: false }, transportRetry: { provider: 'jev', extraAttempts: 2, semanticNoneRetried: false, perAttemptLedger: true, worldActionsRetried: false, event: 's_retry' }, generationStream: { event: 'g_stream', schema: 'gs/g-stream/v1', channels: ['reasoning', 'content'], previewOnly: true, partialExecution: false, history: 'shared event sequence; replay by prefix' }, semantics: { depth: 'v054: maxDepth limits explicit child nesting (0 disables children), not same-layer G updates; local child exhaustion returns evidence to its parent', candidateScope: 'null IDs: dynamic legal kinds; explicit IDs: persistent stage or revision-bound snapshot; never silent widening', initialization: 'adaptive new runs: G reviews the permitted starting environment before action-level S; create/read/reconnect make no calls; forks reinitialize; costs share root budgets', pause: 'between decision quanta; not a rollback', cancel: 'cooperative; unknown outcomes are not retried', fork: 'new trial, never transparent continuation', clock: 'wall clock starts at first step; includes operator pause', recovery: 'v05 autonomous: S abstention or measured stagnation invokes G; G reframes context/options; same-layer provisional installation; explicit read-only child problems return to parent under shared budgets; equivalent decision interfaces rejected', auth: 'one trusted local-user token; actor IDs are provenance/coordination, not separate security principals', persistence: 'live state in process; completed exports may be archived by host; no active crash recovery' } }; }
     get(runId) { const run = this.runs.get(identifier(runId, 'runId')); if (!run)
         return fail('RUN_NOT_FOUND', 'Run not in this service process', 404); return run; }
     async create(raw) { if (!raw || typeof raw !== 'object' || Array.isArray(raw))

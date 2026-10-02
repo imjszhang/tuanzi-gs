@@ -22,9 +22,9 @@ export class AdaptiveGS {
     account() { this.ports.event({ type: 'adaptation_accounting', data: { ...this.accounting, maxFormatRepairs: this.limits.maxFormatRepairs, maxRevisions: this.limits.maxRevisions, scope: 'this-resolver; root call/time budget remains shared' } }); }
     constructor(ports, limits = {}) {
         this.ports = ports;
-        this.limits = { maxDepth: 2, maxRevisions: 3, maxGenerations: 8, maxFormatRepairs: 2, ioTimeoutMs: 120000, ...limits };
+        this.limits = { maxDepth: 2, maxRevisions: 3, maxGenerations: 8, maxFormatRepairs: 2, ioTimeoutMs: 120000, gTimeoutMs: limits.ioTimeoutMs ?? 120000, ...limits };
         for (const [k, v] of Object.entries(this.limits))
-            if (!Number.isSafeInteger(v) || v < (['maxFormatRepairs', 'maxDepth'].includes(k) ? 0 : 1) || v > (k === 'ioTimeoutMs' ? 3600000 : 32))
+            if (!Number.isSafeInteger(v) || v < (['maxFormatRepairs', 'maxDepth'].includes(k) ? 0 : 1) || v > ((k === 'ioTimeoutMs' || k === 'gTimeoutMs') ? 3600000 : 32))
                 throw Error(`Invalid adaptive limit ${k}`);
     }
     async resolve(frame, signal, initialCause) {
@@ -39,13 +39,13 @@ export class AdaptiveGS {
             this.busy = false;
         }
     }
-    async io(revision, signal, fn) {
+    async io(revision, signal, fn, timeoutMs = this.limits.ioTimeoutMs) {
         this.ports.check(revision, signal);
         const local = new AbortController();
         const combined = AbortSignal.any([signal, local.signal]);
         let timer;
         let abort = () => { };
-        const stopped = new Promise((_, reject) => { abort = () => reject(combined.reason ?? Error('aborted')); combined.addEventListener('abort', abort, { once: true }); timer = setTimeout(() => local.abort(Error('adaptive_io_timeout')), this.limits.ioTimeoutMs); });
+        const stopped = new Promise((_, reject) => { abort = () => reject(combined.reason ?? Error('aborted')); combined.addEventListener('abort', abort, { once: true }); timer = setTimeout(() => local.abort(Error('adaptive_io_timeout')), timeoutMs); });
         try {
             const result = await Promise.race([Promise.resolve().then(() => fn(combined)), stopped]);
             this.ports.check(revision, combined);
@@ -97,7 +97,7 @@ export class AdaptiveGS {
             let raw;
             let invalid;
             try {
-                raw = await this.io(frame.revision, signal, s => this.ports.generate(request, s));
+                raw = await this.io(frame.revision, signal, s => this.ports.generate(request, s), this.limits.gTimeoutMs);
                 this.ports.event({ type: 'g_proposed', data: { depth, output: raw } });
                 patches = this.ports.parse(raw, frame);
             }
@@ -134,7 +134,7 @@ export class AdaptiveGS {
                 this.ports.event({ type: 'g_requested', data: repair });
                 invalid = undefined;
                 try {
-                    raw = await this.io(frame.revision, signal, s => this.ports.repairOutput(repair, s));
+                    raw = await this.io(frame.revision, signal, s => this.ports.repairOutput(repair, s), this.limits.gTimeoutMs);
                     this.ports.event({ type: 'g_proposed', data: { depth, mode: 'output-repair', output: raw } });
                     patches = this.ports.parse(raw, frame);
                 }

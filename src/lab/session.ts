@@ -80,7 +80,7 @@ export function createHosted(config:LabConfig,initial:GameState,notify:(e:Engine
     if(!ended)onProgress({kind:'status',status:row.status,reason:row.error,usage:row.usage});throw e;}
    finally{closed=true;active.removeEventListener('abort',onAbort);row.latencyMs=performance.now()-at;notify({runId:'hosted',seq:0,cycle:0,at:Date.now(),type:'lab_request_finished',data:{index:requestIndex,...row}});}
   }};
-  const s=new AutonomousSession(initial,{backend,generator:g,strategy:config.strategy,orderSeed:config.orderSeed,signal,experience:config.experience,...(seed.adaptive?{memory:seed.adaptive}:{}),maxActions:config.maxActions,maxSteps:config.maxSteps,maxGCalls:config.maxGCalls,maxDepth:config.maxDepth,maxRevisions:config.maxRevisions,maxFormatRepairs:config.maxFormatRepairs,deadlineMs:config.deadlineMs},notify);
+  const s=new AutonomousSession(initial,{backend,generator:g,strategy:config.strategy,orderSeed:config.orderSeed,signal,experience:config.experience,...(seed.adaptive?{memory:seed.adaptive}:{}),maxActions:config.maxActions,maxSteps:config.maxSteps,maxGCalls:config.maxGCalls,gTimeoutMs:config.gTimeoutMs,maxDepth:config.maxDepth,maxRevisions:config.maxRevisions,maxFormatRepairs:config.maxFormatRepairs,deadlineMs:config.deadlineMs},notify);
   return decorate({world:s.world,step:()=>s.step(),cancel:()=>s.cancel(),edit:(t,p)=>s.edit(t,p),get finished(){return s.finished;},get lastResult(){return s.lastResult;},inspect:()=>s.inspect(),export:()=>s.export(),memory:()=>({adaptive:s.memory()})});
  }
  if(config.kind==='judgment'){

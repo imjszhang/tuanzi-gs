@@ -1,4 +1,4 @@
-# G/S Lab v0.5.4 — instructions for external experiment operators
+# G/S Lab v0.5.6 — instructions for external experiment operators
 
 You run experiments. The tested G/S system chooses actions. Do not provide solutions.
 
@@ -58,7 +58,7 @@ are retained. Real model performance in this release is NOT_RUN.
 `node scripts/evaluate-reference-v05.mjs terminal.json separate-reference.json`
 is post-run only. Its result may be shown to the human, NEVER passed to a tested run.
 
-API details: docs/API-v0.5.4.md. No arbitrary code/tool execution endpoint, forced action,
+API details: docs/API-v0.5.6.md (extends v0.5.5). No arbitrary code/tool execution endpoint, forced action,
 root-verifier override, public authentication or active crash-recovery support.
 
 ## v0.5.1 observation streams
@@ -91,3 +91,11 @@ Inspect diagnostics.initialization and initialization_* events; first G ledger p
 
 ## v0.5.5
 Read docs/AGENT-v0.5.5.md, docs/MCP-v0.5.5.md and docs/RETRY-v0.5.5.md. MCP is an external operator interface, never an internal source of reference answers. Transient Jev retries preserve input and count every attempt; none must not be retried as a network failure.
+
+## v0.5.6 observer-only deadlock referee
+
+Read docs/AGENT-v0.5.6.md and docs/DEADLOCK-REFEREE.md. Autonomous game runs now use the external host policy `sound-static/v1`. It checks sufficient conditions for impossibility before model work and after actions; `not-proven` means unknown, never proven solvable. Pending future interventions defer these closed-world proofs.
+
+`deadlock_referee` events, `state.referee` and `evaluation.referee` are observer-only evidence. Never feed their reasons, proof facts or derived hints into G/S input, feedback, candidates, memory or a later autonomous trial. A host verdict ends the outer run with `failed`, reason `deadlock_proven:<rule>` and outcome source `environment-referee`; preserve the unchanged raw controller result and do not claim the model recognized the deadlock.
+
+Record this stopping policy when comparing experiments. Historical offline replay is not a new live run and must not rewrite old exports. `maxGCalls` supports 1..256 with default 12; choose it before the trial. Empty-output regeneration recovery is not implemented in this release; `output_format_repair_exhausted` remains an interface failure.

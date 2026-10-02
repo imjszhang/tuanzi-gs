@@ -9,10 +9,11 @@ add('old-model-endpoint-disabled',read('server/reactive.mjs').includes('LEGACY_A
 const host=read('src/lab/session.ts');add('reference-memory-blocked',host.includes('reference_memory_forbidden_in_autonomous_run'),null);add('direct-factory-legacy-live-blocked',host.includes('LEGACY_ASSISTANCE_FORBIDDEN'),null);
 add('world-hints-allowlisted',!read('src/adaptive/world-port.ts').match(/lastFact|s\.scenario|\.\.\.s[,}]/),'publicWorld deliberately excludes author prose and unrecognized properties');
 add('reference-evaluator-not-runtime-imported',sources.every(f=>!read(f).includes('evaluate-reference')),null);
+add('deadlock-referee-host-only',sources.every(f=>!read(f).includes('deadlock')&&!read(f).includes('referee')), 'Observer-only verdicts never enter autonomous modules');
 add('MCP-not-in-autonomous-inputs',sources.every(f=>!read(f).includes('/mcp/')),null);
 add('MCP-no-env-load',!read('bin/gs-lab-mcp.mjs').includes('loadEnvFile('),null);
 add('MCP-audit-read-only',read('server/mcp/service.mjs').includes('audit profile is always read-only'),null);
 add('MCP-operator-reference-lane-check',read('server/mcp/access.mjs').includes('REFERENCE_LANE_HIDDEN'),null);
 const files=[...sources,'server/adaptive.mjs','server/reactive.mjs','vendor/gs-engine-ts/src/adaptive.ts'].map(f=>({file:f,sha256:crypto.createHash('sha256').update(read(f)).digest('hex')}));
-const result={version:'0.5.5',checks,files,pass:checks.every(x=>x.pass),limits:'Static trusted-code dataflow checks plus separate unit canaries. Does not prove absence of knowledge in pretrained models or isolate a malicious actor with full filesystem access.'};
-fs.mkdirSync('reports/v055',{recursive:true});fs.writeFileSync('reports/v055/isolation-audit.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));if(!result.pass)process.exitCode=1;
+const result={version:'0.5.6',checks,files,pass:checks.every(x=>x.pass),limits:'Static trusted-code dataflow checks plus separate unit canaries. Does not prove absence of knowledge in pretrained models or isolate a malicious actor with full filesystem access.'};
+fs.mkdirSync('reports/v056',{recursive:true});fs.writeFileSync('reports/v056/isolation-audit.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));if(!result.pass)process.exitCode=1;

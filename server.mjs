@@ -30,7 +30,7 @@ export const server=http.createServer(async(req,res)=>{try{
  if(await handler(req,res,url))return;
  if(url.pathname==='/api/status'&&req.method==='GET'){
   if(req.headers['sec-fetch-site']==='cross-site'||req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`)throw error('Origin not allowed',403);
-  return send(res,200,{available:true,version:'0.5.5',jevReady,llmReady,token,jevModel,providerCalls,maxCalls,modelGameController:'adaptive',legacyLive:false,generationStreaming:process.env.LLM_STREAM!=='false'});
+  return send(res,200,{available:true,version:'0.5.6',jevReady,llmReady,token,jevModel,providerCalls,maxCalls,modelGameController:'adaptive',legacyLive:false,generationStreaming:process.env.LLM_STREAM!=='false'});
  }
  if(removed.has(url.pathname))throw error('LEGACY_ASSISTANCE_FORBIDDEN: use controller=adaptive at /lab; historical controllers are offline references.',410);
  if(url.pathname==='/api/judgment'){
@@ -47,5 +47,5 @@ export const server=http.createServer(async(req,res)=>{try{
  if(req.method==='HEAD')return res.end();fs.createReadStream(path.join(root,'public',filename)).pipe(res);
  }catch(e){if(!res.headersSent)send(res,e.status??500,{error:String(e.message??e).slice(0,600),...(e.usage?{usage:e.usage}:{})});else res.end();}});
 server.on('error',e=>{console.error(e.code==='EADDRINUSE'?`Port ${port} is busy. Set PORT to another local port.`:e.message);process.exitCode=1;});
-server.listen(port,'127.0.0.1',()=>console.log(`\n G/S Lab v0.5.5\n http://127.0.0.1:${port}/lab\n CLI: node bin/gs-lab.mjs capabilities\n Models: Jev ${jevReady?'ready':'not configured'}, G ${llmReady?'ready':'not configured'}.\n Autonomous runs do not read reference solutions. MAX_SERVER_CALLS=${maxCalls}.\n`));
+server.listen(port,'127.0.0.1',()=>console.log(`\n G/S Lab v0.5.6\n http://127.0.0.1:${port}/lab\n CLI: node bin/gs-lab.mjs capabilities\n Models: Jev ${jevReady?'ready':'not configured'}, G ${llmReady?'ready':'not configured'}.\n Autonomous runs do not read reference solutions. MAX_SERVER_CALLS=${maxCalls}.\n`));
 function shutdown(){manager.close();server.close();setTimeout(()=>process.exit(0),1500).unref();}process.once('SIGINT',shutdown);process.once('SIGTERM',shutdown);
